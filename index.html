@@ -1,0 +1,1207 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#2e6a4e" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131815" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="googlebot" content="noindex, nofollow">
+<meta name="description" content="Persönliches Rezeptbuch mit Einkaufsliste nach Laufweg">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="rochen-192.png" type="image/png">
+<link rel="apple-touch-icon" href="rochen-192.png">
+<title>Mein Rezeptbuch</title>
+<style>
+html { color-scheme: light; -webkit-text-size-adjust: 100%; }
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; -webkit-tap-highlight-color: transparent; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+/* Layout: sticky header with two tabs; recipe cards in a wrapping grid; detail and editor slide up as a sheet. */
+:root {
+  --paper: #f3f5ef;
+  --surface: #ffffff;
+  --ink: #1b241f;
+  --muted: #5d6a62;
+  --line: #dbe1d6;
+  --accent: #2e6a4e;
+  --accent-soft: #e2eee6;
+  --accent-ink: #ffffff;
+  --mark: #d9a21f;
+  --danger: #b23a2b;
+  --heart: #d23f58;
+  --shade: rgba(20, 28, 24, .45);
+  --display: "Young Serif", Georgia, "Times New Roman", serif;
+  --body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #131815; --surface: #1b221e; --ink: #e7ece5; --muted: #9ba79f; --line: #2b3530;
+    --accent: #72c198; --accent-soft: #213229; --accent-ink: #0e1913; --mark: #e8b84a; --danger: #ec7b6b; --heart: #f27d90;
+    --shade: rgba(0,0,0,.6); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #131815; --surface: #1b221e; --ink: #e7ece5; --muted: #9ba79f; --line: #2b3530;
+  --accent: #72c198; --accent-soft: #213229; --accent-ink: #0e1913; --mark: #e8b84a; --danger: #ec7b6b; --heart: #f27d90;
+  --shade: rgba(0,0,0,.6); color-scheme: dark;
+}
+.card { position: relative; }
+.card h3 { padding-right: 34px; }
+.heart { border: 0; background: transparent; width: 38px; height: 38px; border-radius: 999px; display: inline-grid; place-items: center; color: var(--muted); flex: none; }
+.heart:hover { color: var(--heart); }
+.heart svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.heart[aria-pressed="true"] { color: var(--heart); }
+.heart[aria-pressed="true"] svg { fill: currentColor; }
+.card .heart { position: absolute; top: 8px; right: 8px; }
+@media (prefers-reduced-motion: no-preference) { .heart[aria-pressed="true"] svg { animation: pop .25s ease-out; } @keyframes pop { 50% { transform: scale(1.25); } } }
+.panel-btns { display: flex; gap: 6px; align-items: center; }
+.chip .h { color: var(--heart); }
+* { box-sizing: border-box; }
+body { background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.5; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--paper); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.wrap { max-width: 980px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--paper); border-bottom: 1px solid var(--line); }
+.top .wrap { display: flex; align-items: center; gap: 12px; padding-block: 14px; flex-wrap: wrap; }
+.brand { font-family: var(--display); font-size: 24px; line-height: 1.1; margin: 0; flex: 1 1 auto; }
+.brand small { display: block; font-family: var(--body); font-size: 12px; color: var(--muted); letter-spacing: .02em; margin-top: 2px; }
+.tabs { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px; }
+.tab { border: 0; background: transparent; padding: 7px 14px; border-radius: 999px; font-weight: 600; font-size: 14px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.tab[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); }
+.count { font-family: var(--mono); font-size: 12px; min-width: 20px; padding: 0 5px; border-radius: 999px; background: var(--mark); color: #1b1404; text-align: center; }
+
+main .wrap { padding-block: 20px 60px; }
+
+.toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.search { flex: 1 1 220px; min-width: 0; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); }
+.btn { border: 1px solid var(--line); background: var(--surface); padding: 9px 14px; border-radius: 10px; font-weight: 600; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.ghost { background: transparent; }
+.btn.danger { color: var(--danger); }
+.btn.danger.armed { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn:disabled { opacity: .5; cursor: default; }
+
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; }
+.chip { border: 1px solid var(--line); background: transparent; border-radius: 999px; padding: 4px 12px; font-size: 13px; color: var(--muted); }
+.chip[aria-pressed="true"] { border-color: var(--ink); color: var(--ink); font-weight: 600; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.card-open { all: unset; cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
+.card-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
+.eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; display: flex; gap: 8px; align-items: center; }
+.tag { background: var(--accent-soft); color: var(--accent); padding: 1px 7px; border-radius: 6px; letter-spacing: .04em; }
+.card h3 { font-family: var(--display); font-weight: 400; font-size: 20px; line-height: 1.2; margin: 0; text-wrap: balance; }
+.meta { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.peek { font-size: 13px; color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.card .btn { align-self: flex-start; margin-top: auto; }
+
+.empty { border: 1.5px dashed var(--line); border-radius: 14px; padding: 36px 20px; text-align: center; color: var(--muted); display: grid; gap: 10px; justify-items: center; }
+.empty h3 { font-family: var(--display); font-weight: 400; color: var(--ink); margin: 0; font-size: 22px; }
+
+/* Einkaufsliste */
+.list-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px; }
+.list-head h2 { font-family: var(--display); font-weight: 400; font-size: 28px; margin: 0; }
+.for { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.aisle { margin-bottom: 18px; }
+.aisle h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 6px; }
+.items { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.item { display: grid; grid-template-columns: 26px 86px 1fr auto; gap: 10px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line); }
+.item:first-child { border-top: 0; }
+.item.noqty { grid-template-columns: 26px 1fr auto; }
+.ing.noqty li { grid-template-columns: 24px 1fr; }
+.ing-edit.noqty .ing-row { grid-template-columns: 1fr 1fr 32px; }
+.ing-edit.noqty .qf { display: none; }
+@media (max-width: 560px) { .ing-edit.noqty .ing-row { grid-template-columns: 1fr 32px; } .ing-edit.noqty .ing-row .aisle-sel { grid-column: 1 / 2; } }
+.switch { display: inline-flex; align-items: center; gap: 8px; text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 13px; color: var(--ink); cursor: pointer; }
+.switch input { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; }
+.item input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); margin: 0; }
+.qty { font-family: var(--mono); font-size: 13.5px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.iname { min-width: 0; }
+.src { display: block; font-size: 12px; color: var(--muted); }
+.item.done .iname, .item.done .qty { text-decoration: line-through; color: var(--muted); }
+.x { border: 0; background: transparent; color: var(--muted); font-size: 18px; padding: 2px 6px; border-radius: 6px; line-height: 1; }
+.x:hover { color: var(--danger); }
+.adder { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 24px; }
+.adder input { flex: 1 1 200px; min-width: 0; }
+.field, .adder input, .adder select { padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); }
+
+/* Sheet */
+.sheet { position: fixed; inset: 0; z-index: 20; background: var(--shade); display: flex; align-items: flex-end; justify-content: center; }
+.panel { background: var(--surface); width: 100%; max-width: 720px; max-height: 92%; overflow-y: auto; border-radius: 18px 18px 0 0; padding: 22px max(20px, env(safe-area-inset-right, 0px)) calc(28px + env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px)); }
+@media (min-width: 760px) { .sheet { align-items: center; } .panel { border-radius: 18px; max-height: 88%; } }
+@media (prefers-reduced-motion: no-preference) { .panel { animation: up .22s ease-out; } @keyframes up { from { transform: translateY(24px); opacity: .6; } } }
+.panel-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.panel h2 { font-family: var(--display); font-weight: 400; font-size: 30px; line-height: 1.15; margin: 6px 0 4px; text-wrap: balance; }
+.close { border: 1px solid var(--line); background: transparent; border-radius: 999px; width: 36px; height: 36px; font-size: 18px; flex: none; }
+.section-label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; margin: 22px 0 8px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.stepper { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; text-transform: none; letter-spacing: 0; }
+.stepper button { border: 0; background: transparent; width: 32px; height: 30px; font-size: 16px; }
+.stepper span { font-family: var(--mono); font-size: 13px; color: var(--ink); min-width: 74px; text-align: center; }
+.ing { list-style: none; padding: 0; margin: 0; }
+.ing li { display: grid; grid-template-columns: 24px 92px 1fr; gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px dotted var(--line); }
+.ing input { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; }
+.ing li.off .qty, .ing li.off span:last-child { color: var(--muted); }
+.hint { font-size: 12.5px; color: var(--muted); margin: 8px 0 0; }
+.steps { padding-left: 22px; margin: 0; display: grid; gap: 8px; max-width: 65ch; }
+.steps li::marker { font-family: var(--mono); color: var(--accent); }
+.notes { background: var(--accent-soft); border-radius: 10px; padding: 10px 14px; max-width: 65ch; }
+.panel-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 24px; justify-content: space-between; }
+.sticky-cta { position: sticky; bottom: -28px; background: var(--surface); padding-top: 12px; margin-top: 12px; }
+
+/* Formular */
+.form { display: grid; gap: 14px; margin-top: 10px; }
+.form label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; color: var(--muted); min-width: 0; }
+.form .field { width: 100%; font-weight: 400; color: var(--ink); }
+.row { display: flex; flex-wrap: wrap; gap: 10px; }
+.row label { flex: 1 1 110px; }
+.row label:first-child { flex: 3 1 220px; }
+.ing-edit { display: grid; gap: 8px; }
+.ing-row { display: grid; grid-template-columns: 70px 84px 1fr 1fr 32px; gap: 6px; align-items: center; }
+.ing-row .field { padding: 8px 9px; font-size: 14px; }
+@media (max-width: 560px) { .ing-row { grid-template-columns: 64px 78px 1fr 32px; } .ing-row .aisle-sel { grid-column: 1 / 4; } }
+textarea.field { min-height: 130px; resize: vertical; }
+.err { color: var(--danger); font-size: 13px; }
+
+.sugg { position: fixed; z-index: 25; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,.2); padding: 4px; max-height: 248px; overflow-y: auto; }
+.sugg-row { padding: 9px 10px; border-radius: 7px; cursor: pointer; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 14px; }
+.sugg-row:hover, .sugg-row.on { background: var(--accent-soft); }
+.sugg-row b { color: var(--accent); font-weight: 700; }
+.sugg-tag { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.route { list-style: none; padding: 0; margin: 18px 0 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.route li { display: grid; grid-template-columns: 22px 28px 1fr auto; gap: 10px; align-items: center; padding: 8px 10px 8px 14px; border-top: 1px solid var(--line); }
+.route li:first-child { border-top: 0; }
+.route-n { font-family: var(--mono); font-size: 13px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.route-name { min-width: 0; font-weight: 500; }
+.route li { background: var(--surface); }
+.route li.dragging { background: var(--accent-soft); box-shadow: 0 6px 18px rgba(0,0,0,.18); position: relative; z-index: 1; }
+.grip { cursor: grab; touch-action: none; user-select: none; color: var(--muted); font-size: 18px; line-height: 1; padding: 6px 2px; text-align: center; }
+.grip:active { cursor: grabbing; }
+.route-btns { display: flex; gap: 4px; }
+.mv { width: 36px; height: 34px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; font-size: 16px; }
+.mv:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.mv:disabled { opacity: .3; cursor: default; }
+.ing-row2 { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 9px 14px; border-top: 1px solid var(--line); }
+.ing-row2:first-child { border-top: 0; }
+.ing-row2 .use { font-size: 12.5px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ing-row2.hit { background: var(--accent-soft); }
+#ing-hint b { color: var(--ink); }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 30; background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 999px; font-size: 14px; font-weight: 500; max-width: calc(100% - 32px); }
+.mode { font-size: 12px; color: var(--muted); text-align: center; margin-top: 30px; }
+.backup { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 10px; }
+.backup .btn { font-size: 13px; padding: 7px 12px; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <h1 class="brand">Mein Rezeptbuch<small>Die Gerichte, die ich immer wieder koche</small></h1>
+    <nav class="tabs" role="tablist" aria-label="Ansicht">
+      <button class="tab" role="tab" id="tab-recipes" aria-selected="true" data-view="recipes">Rezepte</button>
+      <button class="tab" role="tab" id="tab-list" aria-selected="false" data-view="list">Einkaufsliste <span class="count" id="list-count" hidden>0</span></button>
+      <button class="tab" role="tab" id="tab-ing" aria-selected="false" data-view="ingredients">Zutaten</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <section id="view-recipes">
+      <div class="toolbar">
+        <input class="search" id="search" type="search" placeholder="Rezept oder Zutat suchen …" aria-label="Suchen">
+        <button class="btn primary" id="new-recipe">+ Neues Rezept</button>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div id="grid" class="grid"></div>
+    </section>
+
+    <section id="view-ingredients" hidden>
+      <div class="list-head">
+        <div>
+          <h2>Zutaten</h2>
+          <div class="for" id="ing-count"></div>
+        </div>
+      </div>
+      <form class="adder" id="ing-form" style="margin-bottom:6px">
+        <input id="ing-new" autocomplete="off" aria-autocomplete="list" placeholder="Zutat suchen oder neu eintragen …" aria-label="Zutat suchen oder neu eintragen">
+        <select id="ing-aisle" aria-label="Abteilung"></select>
+        <button class="btn primary" type="submit" id="ing-add">Hinzufügen</button>
+      </form>
+      <p class="hint" id="ing-hint" style="margin:0 0 18px;min-height:1.5em"></p>
+      <div id="ing-list"></div>
+    </section>
+
+    <section id="view-list" hidden>
+      <div class="list-head">
+        <div>
+          <h2>Einkaufsliste</h2>
+          <div class="for" id="list-for"></div>
+        </div>
+        <div class="actions">
+          <button class="btn" id="route">Laufweg anpassen</button>
+          <button class="btn" id="copy-list">Liste kopieren</button>
+          <button class="btn" id="clear-done">Erledigte entfernen</button>
+          <button class="btn danger" id="clear-all">Liste leeren</button>
+        </div>
+      </div>
+      <form class="adder" id="adder">
+        <input id="adder-name" autocomplete="off" aria-autocomplete="list" placeholder="Noch etwas dazu, z. B. 1 l Milch" aria-label="Artikel hinzufügen">
+        <select id="adder-aisle" aria-label="Abteilung"></select>
+        <button class="btn" type="submit">Hinzufügen</button>
+      </form>
+      <div id="list"></div>
+    </section>
+    <div class="mode">
+      <p id="mode" style="margin:0">Deine Daten sind auf diesem Handy gespeichert und funktionieren auch offline.</p>
+      <div class="backup">
+        <button class="btn" id="exp">Sicherung speichern</button>
+        <label class="btn" for="imp-file" style="cursor:pointer">Sicherung laden</label>
+        <input type="file" id="imp-file" accept="application/json,.json" hidden>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="panel" id="panel" role="dialog" aria-modal="true" aria-labelledby="panel-title"></div>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+(function () {
+  const AISLES = ["Bäckerei", "Früchte & Gemüse", "Milch, Käse & Eier", "Fleisch & Fisch", "Beilagen & Saisonales", "Öl, Saucen & Eingemachtes", "Teigwaren, Reis & Backzutaten", "Konserven & International", "Gewürze", "Tiefkühl", "Frühstück & Snacks", "Getränke", "Sonstiges"];
+  const UNITS = ["", "g", "kg", "ml", "dl", "l", "EL", "TL", "Stk", "Zehe", "Bund", "Dose", "Pck", "Prise", "Becher"];
+  const CATS = ["Pasta", "Fleisch", "Vegetarisch", "Fisch", "Suppe", "Salat", "Backen", "Dessert", "Frühstück", "Anderes"];
+
+  /* Abteilung automatisch erkennen. Reihenfolge zählt: der erste Treffer gewinnt.
+     "-wort" = Wortende (z. B. -öl trifft Olivenöl, nicht Oliven). Wörter bis 3 Buchstaben nur als ganzes Wort. */
+  const AUTO = [
+    ["Beilagen & Saisonales", ["rotkraut", "rotkohl", "blaukraut", "rehpfeffer", "wildpfeffer", "spätzli", "knöpfli", "marroni", "rosenkohl gekocht"]],
+    ["Bäckerei", ["hefe", "bagel"]],
+    ["Teigwaren, Reis & Backzutaten", ["tomatensauce", "pastasauce", "sugo"]],
+    ["Konserven & International", ["tortilla", "taco", "wraps", "nachos", "jalape"]],
+    ["Öl, Saucen & Eingemachtes", ["essiggurken", "cornichons", "silberzwiebeln", "kapern"]],
+    ["Öl, Saucen & Eingemachtes", ["-öl"]],
+    ["Früchte & Gemüse", ["rucola", "grüne bohnen", "kefen", "frühlingszwiebel", "bundzwiebel"]],
+    ["Konserven & International", ["kokosmilch", "gehackte tomaten", "pelati", "passata", "tomatenpüree", "tomatenmark", "dose", "kidney", "kichererbsen", "linsen", "mais", "bohnen", "thon", "thunfisch", "sardinen", "oliven", "kapern", "jalape", "essiggurken", "cornichons", "silberzwiebeln", "apfelmus", "preiselbeer", "artischocken", "pilze getrocknet"]],
+    ["Öl, Saucen & Eingemachtes", ["zitronensaft", "limettensaft", "bouillon", "brühe", "fond", "senf", "ketchup", "mayonnaise", "mayo", "sojasauce", "worcester", "currypaste", "pesto", "sauce", "dressing", "essig", "balsamico", "maggi", "meerrettich", "kapern", "essiggurken", "cornichons", "silberzwiebeln"]],
+    ["Gewürze", ["salz", "pfeffer", "gewürz", "aromat", "paprikapulver", "paprika edelsüss", "chilipulver", "chiliflocken", "cayenne", "curry", "kurkuma", "kreuzkümmel", "kümmel", "zimt", "muskat", "oregano", "lorbeer", "nelken", "ingwerpulver", "knoblauchpulver", "zwiebelpulver", "provence", "sesam"]],
+    ["Teigwaren, Reis & Backzutaten", ["mehl", "vanillezucker", "puderzucker", "zucker", "hefe", "backpulver", "natron", "maizena", "stärke", "vanille", "kakao", "schokolade", "schoggi", "kuvertüre", "gemahlene", "gemahlen", "griess", "paniermehl", "gelatine", "rosinen", "streusel", "glasur", "lebkuchengewürz"]],
+    ["Teigwaren, Reis & Backzutaten", ["reis", "risotto", "pasta", "spaghetti", "penne", "hörnli", "magronen", "makkaroni", "maccheroni", "nudeln", "teigwaren", "lasagne", "tagliatelle", "fusilli", "farfalle", "rigatoni", "spätzli", "knöpfli", "couscous", "bulgur", "quinoa", "polenta", "glasnudeln", "reisnudeln"]],
+    ["Frühstück & Snacks", ["müesli", "haferflocken", "cornflakes", "konfitüre", "konfi", "honig", "nutella", "erdnussbutter", "nüsse", "mandeln", "baumnüsse", "haselnüsse", "pinienkerne", "cashew", "kaffee", "tee", "chips", "guetzli", "crackers", "darvida", "zwieback"]],
+    ["Tiefkühl", ["tiefkühl", "tk", "glace", "fischstäbchen", "pommes", "rösti tiefgekühlt"]],
+    ["Milch, Käse & Eier", ["milch", "rahm", "sahne", "butter", "käse", "parmesan", "sbrinz", "gruyère", "gruyere", "appenzeller", "emmentaler", "tilsiter", "raclette", "fondue", "mozzarella", "burrata", "feta", "mascarpone", "ricotta", "quark", "joghurt", "jogurt", "crème fraîche", "creme fraiche", "sauerrahm", "frischkäse", "hüttenkäse", "halbrahm", "ei", "eier", "eigelb", "eiweiss", "tofu", "halloumi", "teig", "rösti", "ravioli", "tortellini", "gnocchi"]],
+    ["Fleisch & Fisch", ["fleisch", "hackfleisch", "gehacktes", "rind", "kalb", "schwein", "poulet", "huhn", "hähnchen", "truthahn", "trute", "lamm", "speck", "schinken", "wurst", "cervelat", "salami", "chorizo", "landjäger", "bratwurst", "wienerli", "geschnetzeltes", "steak", "filet", "plätzli", "lachs", "fisch", "crevetten", "garnelen", "forelle", "egli", "dorsch", "kabeljau", "pangasius"]],
+    ["Bäckerei", ["brot", "zopf", "brötchen", "brötli", "gipfeli", "toast", "tortilla", "wraps", "pita", "baguette", "ciabatta", "naan", "fladenbrot"]],
+    ["Getränke", ["wein", "bier", "saft", "mineral", "wasser", "cola", "sirup", "prosecco", "kirschwasser", "rum", "most", "eistee"]],
+    ["Früchte & Gemüse", ["zwiebel", "schalotte", "knoblauch", "kartoffel", "härdöpfel", "rüebli", "karotte", "lauch", "sellerie", "peperoni", "paprika", "zucchetti", "zucchini", "aubergine", "tomate", "gurke", "salat", "nüsslisalat", "rucola", "spinat", "mangold", "brokkoli", "broccoli", "blumenkohl", "romanesco", "kohl", "kohlrabi", "rosenkohl", "kürbis", "pilze", "champignons", "fenchel", "randen", "radiesli", "spargel", "erbsen", "süsskartoffel", "pastinake", "avocado", "ingwer", "chili", "petersilie", "basilikum", "koriander", "schnittlauch", "dill", "minze", "rosmarin", "thymian", "salbei", "kräuter", "apfel", "äpfel", "birne", "banane", "zitrone", "limette", "orange", "mandarine", "beeren", "erdbeer", "himbeer", "heidelbeer", "brombeer", "trauben", "mango", "ananas", "kiwi", "pfirsich", "nektarine", "aprikose", "zwetschge", "kirsche", "melone", "rhabarber", "obst", "früchte", "gemüse"]],
+  ];
+  const OLD_AISLE = {"Gemüse & Obst": "Früchte & Gemüse", "Gemüse & Früchte": "Früchte & Gemüse", "Milchprodukte & Eier": "Milch, Käse & Eier", "Milchprodukte & Kühlregal": "Milch, Käse & Eier", "Brot & Backwaren": "Bäckerei", "Brot & Gebäck": "Bäckerei", "Gewürze & Öle": "Öl, Saucen & Eingemachtes", "Öl, Saucen & Gewürze": "Öl, Saucen & Eingemachtes", "Konserven & Saucen": "Konserven & International", "Konserven": "Konserven & International", "Teigwaren, Reis & Vorrat": "Teigwaren, Reis & Backzutaten", "Teigwaren & Reis": "Teigwaren, Reis & Backzutaten", "Backzutaten": "Teigwaren, Reis & Backzutaten"};
+  /* Alte oder unbekannte Abteilungen beim Laden neu zuordnen. */
+  function normAisle(name, aisle) {
+    if (AISLES.includes(aisle) && aisle !== "Sonstiges") return aisle;
+    return guessAisle(name) || OLD_AISLE[aisle] || "Sonstiges";
+  }
+  function normRecipe(r) {
+    return Object.assign({}, r, { ingredients: (r.ingredients || []).map((i) => Object.assign({}, i, { aisle: normAisle(i.name, i.aisle) })) });
+  }
+  function normList(l) {
+    l = clone(l || {}); l.items = (l.items || []).map((i) => Object.assign(i, { aisle: normAisle(i.name, i.aisle) })); l.recipes = l.recipes || [];
+    return l;
+  }
+  function learnedAisle(name) {
+    const k = String(name || "").trim().toLowerCase();
+    if (!k) return null;
+    for (const r of recipes) for (const i of (r.ingredients || [])) {
+      if ((i.name || "").trim().toLowerCase() === k && AISLES.includes(i.aisle) && i.aisle !== "Sonstiges") return i.aisle;
+    }
+    const ea = extraAisles[k];
+    if (ea && AISLES.includes(ea) && ea !== "Sonstiges") return ea;
+    return null;
+  }
+  function guessAisle(name) {
+    const learned = learnedAisle(name);
+    if (learned) return learned;
+    const n = " " + String(name || "").toLowerCase().replace(/[^a-zäöüéèàêîâôûçñß\s-]/g, " ").replace(/\s+/g, " ") + " ";
+    if (!n.trim()) return null;
+    for (const [aisle, words] of AUTO) {
+      for (const w of words) {
+        if (w[0] === "-" ? n.includes(w.slice(1) + " ") : w.length <= 3 ? n.includes(" " + w + " ") : n.includes(w)) return aisle;
+      }
+    }
+    return null;
+  }
+
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+
+  let recipes = [];
+  let list = { items: [], recipes: [] };
+  let extras = [];
+  let extraAisles = {};
+  let aisleOrder = null;
+  let routeItems = null;
+  function hasRoute() { return !!(routeItems && routeItems.length); }
+  function allIngredientNames() {
+    const map = new Map();
+    const add = (name, aisle) => { const k = (name || "").trim().toLowerCase(); if (!k || map.has(k)) return; map.set(k, { key: k, name: name.trim(), aisle: normAisle(name, aisle) }); };
+    recipes.forEach((r) => (r.ingredients || []).forEach((i) => add(i.name, i.aisle)));
+    (list.items || []).forEach((i) => add(i.name, i.aisle));
+    extras.forEach((n) => add(n, extraAisles[n.trim().toLowerCase()] || null));
+    return [...map.values()];
+  }
+  /* Rang einer Zutat im Laufweg. Neue Zutaten landen hinter der letzten bekannten Zutat aus derselben Abteilung. */
+  function rankFn() {
+    const ao = orderedAisles();
+    const idx = new Map((routeItems || []).map((k, i) => [k, i]));
+    const aisleMax = {};
+    allIngredientNames().forEach((e) => { if (idx.has(e.key)) aisleMax[e.aisle] = Math.max(aisleMax[e.aisle] == null ? -1 : aisleMax[e.aisle], idx.get(e.key)); });
+    return (name, aisle) => {
+      const k = (name || "").trim().toLowerCase();
+      if (idx.has(k)) return idx.get(k);
+      const a = normAisle(name, aisle);
+      if (aisleMax[a] != null) return aisleMax[a] + 0.5;
+      return 100000 + ao.indexOf(a);
+    };
+  }
+  function routeList() {
+    const r = rankFn();
+    return allIngredientNames().sort((a, b) => r(a.name, a.aisle) - r(b.name, b.aisle) || a.name.localeCompare(b.name, "de"));
+  }
+  function orderedAisles() {
+    const o = (aisleOrder || []).filter((a) => AISLES.includes(a));
+    return o.concat(AISLES.filter((a) => !o.includes(a)));
+  }
+  let filter = { q: "", cat: "" };
+  let ready = false;
+  let readOnly = false;
+
+  /* ---------- Mengen & Einheiten ---------- */
+  function family(unit) {
+    if (unit === "g" || unit === "kg") return "g";
+    if (unit === "ml" || unit === "dl" || unit === "l") return "ml";
+    return unit || "";
+  }
+  function toBase(qty, unit) {
+    if (qty == null) return null;
+    if (unit === "kg" || unit === "l") return qty * 1000;
+    if (unit === "dl") return qty * 100;
+    return qty;
+  }
+  const FRAC = { 0.25: "¼", 0.5: "½", 0.75: "¾", 0.33: "⅓", 0.67: "⅔" };
+  function num(n) {
+    if (n == null || isNaN(n)) return "";
+    const whole = Math.floor(n), rest = Math.round((n - whole) * 100) / 100;
+    if (rest && FRAC[rest] && n < 10) return (whole ? whole : "") + FRAC[rest];
+    return (Math.round(n * 100) / 100).toLocaleString("de-CH", { maximumFractionDigits: 2 });
+  }
+  function pretty(qty, unit) {
+    if (qty == null) return unit === "g" || unit === "ml" ? "" : (unit || "");
+    if (unit === "g" && qty >= 1000) return num(qty / 1000) + " kg";
+    if (unit === "ml") {
+      if (qty >= 1000) return num(qty / 1000) + " l";
+      if (qty >= 100) return num(qty / 100) + " dl";
+      return num(qty) + " ml";
+    }
+    if (unit === "Stk" || !unit) return num(unit === "Stk" ? Math.ceil(qty * 4) / 4 : qty) + (unit ? " Stk" : "");
+    return num(qty) + " " + unit;
+  }
+  function parseQty(s) {
+    s = String(s || "").trim().replace(",", ".").replace("½", ".5").replace("¼", ".25").replace("¾", ".75");
+    if (!s) return null;
+    if (/^\d+\/\d+$/.test(s)) { const [a, b] = s.split("/"); return +a / +b; }
+    const n = parseFloat(s);
+    return isNaN(n) ? null : n;
+  }
+
+  /* ---------- Speicher: geteilt (db) oder nur dieser Browser ---------- */
+  const local = {
+    kind: "local",
+    read(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+    write(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+    subscribe() {
+      recipes = this.read("rb-recipes", []).map(normRecipe);
+      list = normList(this.read("rb-list", { items: [], recipes: [] }));
+      extras = this.read("rb-extra", []);
+      extraAisles = this.read("rb-extra-aisles", {});
+      aisleOrder = this.read("rb-order", null);
+      routeItems = this.read("rb-route", null);
+      ready = true; renderAll();
+    },
+    async saveRecipe(id, data) {
+      const all = this.read("rb-recipes", []);
+      id = id || "r" + Date.now().toString(36);
+      const i = all.findIndex((r) => r.id === id);
+      const row = Object.assign({ id }, data);
+      if (i >= 0) all[i] = row; else all.push(row);
+      this.write("rb-recipes", all); recipes = all.map(normRecipe); renderAll();
+    },
+    async deleteRecipe(id) { recipes = this.read("rb-recipes", []).filter((r) => r.id !== id); this.write("rb-recipes", recipes); recipes = recipes.map(normRecipe); renderAll(); },
+    async saveList(l) { this.write("rb-list", l); list = l; renderAll(); },
+    async saveExtras(a, m) { this.write("rb-extra", a); this.write("rb-extra-aisles", m || {}); },
+    async saveRoute(r) { this.write("rb-route", r); },
+  };
+
+  function remote(db) {
+    let busy = false, pending = null;
+    return {
+      kind: "db",
+      subscribe() {
+        db.collection("recipes").onSnapshot((snap) => {
+          recipes = snap.docs.map((d) => normRecipe(Object.assign({ id: d.id }, d.data())));
+          ready = true; renderAll();
+        }, () => { ready = true; renderAll(); });
+        db.doc("meta/laden").onSnapshot((s) => {
+          if (orderBusy) return;
+          const d = s.exists ? (s.data() || {}) : {};
+          aisleOrder = d.order || null; routeItems = d.items ? d.items.slice() : null;
+          renderList(); if (routeOpen) drawRoute();
+        }, () => {});
+        db.doc("meta/zutaten").onSnapshot((s) => { const d = s.exists ? (s.data() || {}) : {}; extras = (d.names || []).slice(); extraAisles = Object.assign({}, d.aisles || {}); renderIngredients(); }, () => {});
+        db.doc("lists/einkauf").onSnapshot((s) => {
+          if (busy || pending) return;
+          list = normList(s.exists ? s.data() : null);
+          renderAll();
+        });
+      },
+      async saveRecipe(id, data) {
+        const ref = id ? db.collection("recipes").doc(id) : db.collection("recipes").doc();
+        await ref.set(data);
+      },
+      async deleteRecipe(id) { await db.collection("recipes").doc(id).delete(); },
+      async saveExtras(a, m) { await db.doc("meta/zutaten").set({ names: a, aisles: m || {} }); },
+      async saveRoute(r) {
+        orderPending = { order: orderedAisles(), items: r ? r.slice() : null };
+        if (orderBusy) return;
+        orderBusy = true;
+        try { while (orderPending) { const next = orderPending; orderPending = null; if (!next.items) delete next.items; await db.doc("meta/laden").set(next); } }
+        finally { orderBusy = false; }
+      },
+      async saveList(l) {
+        list = l; renderAll();
+        pending = clone(l);
+        if (busy) return;
+        busy = true;
+        try {
+          while (pending) { const next = pending; pending = null; await db.doc("lists/einkauf").set(next); }
+        } catch (e) { fail(e); } finally { busy = false; }
+      },
+    };
+  }
+
+  let store = null;
+  let orderBusy = false, orderPending = null, routeOpen = false;
+  function fail(e) {
+    if (e && e.code === "invalid_argument") { readOnly = true; toast("Du kannst dieses Rezeptbuch nur ansehen, nicht ändern."); }
+    else if (e && e.code === "quota_exceeded") toast("Speicher ist voll. Lösche ein paar alte Rezepte.");
+    else toast("Speichern hat nicht geklappt. Versuch es gleich nochmal.");
+  }
+
+  const SEED = { recipes: [], list: { items: [], recipes: [] }, extras: [], extraAisles: {}, route: null, order: null };
+  const KEYS = { recipes: "rb-recipes", list: "rb-list", extras: "rb-extra", extraAisles: "rb-extra-aisles", route: "rb-route", order: "rb-order" };
+  function writeAll(data) {
+    Object.entries(KEYS).forEach(([k, key]) => {
+      if (data[k] === undefined || data[k] === null) localStorage.removeItem(key);
+      else localStorage.setItem(key, JSON.stringify(data[k]));
+    });
+  }
+  function readAll() {
+    const out = { app: "mein-rezeptbuch", version: 1, savedAt: new Date().toISOString() };
+    Object.entries(KEYS).forEach(([k, key]) => { try { const v = localStorage.getItem(key); out[k] = v ? JSON.parse(v) : null; } catch (e) { out[k] = null; } });
+    return out;
+  }
+  async function exportBackup() {
+    const json = JSON.stringify(readAll(), null, 1);
+    const name = "rezeptbuch-sicherung-" + new Date().toISOString().slice(0, 10) + ".json";
+    const blob = new Blob([json], { type: "application/json" });
+    try {
+      const file = new File([blob], name, { type: "application/json" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "Rezeptbuch-Sicherung" }); return; }
+    } catch (e) { if (e && e.name === "AbortError") return; }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast("Sicherung im Download-Ordner gespeichert");
+  }
+  let pendingImport = null;
+  function importBackup(file) {
+    const fr = new FileReader();
+    fr.onload = () => {
+      try {
+        const data = JSON.parse(fr.result);
+        if (!data || data.app !== "mein-rezeptbuch" || !Array.isArray(data.recipes)) throw new Error("bad");
+        pendingImport = data;
+        $("#panel").innerHTML = `
+          <div class="panel-top"><h2 id="panel-title">Sicherung laden?</h2><button class="close" data-act="close" aria-label="Schliessen">×</button></div>
+          <p style="max-width:52ch">Die Sicherung vom ${esc(new Date(data.savedAt || Date.now()).toLocaleString("de-CH"))} enthält ${data.recipes.length} Rezepte. Sie ersetzt alles, was jetzt in der App gespeichert ist.</p>
+          <div class="panel-actions"><button class="btn ghost" data-act="close">Abbrechen</button><button class="btn primary" data-act="do-import">Ersetzen und laden</button></div>`;
+        showSheet();
+      } catch (e) { toast("Das ist keine gültige Rezeptbuch-Sicherung."); }
+    };
+    fr.readAsText(file);
+  }
+
+  async function boot() {
+    renderAll();
+    try {
+      if (!localStorage.getItem("rb-seeded")) {
+        if (!localStorage.getItem("rb-recipes")) writeAll(SEED);
+        localStorage.setItem("rb-seeded", "1");
+      }
+    } catch (e) {}
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+    store = local;
+    store.subscribe();
+  }
+
+  /* ---------- Einkaufsliste ---------- */
+  function addToList(items, recipeName) {
+    const l = clone(list);
+    l.items = l.items || []; l.recipes = l.recipes || [];
+    let added = 0;
+    items.forEach((ing) => {
+      const fam = family(ing.unit);
+      const key = ing.name.trim().toLowerCase() + "|" + fam;
+      const base = toBase(ing.qty, ing.unit);
+      const nm = ing.name.trim().toLowerCase();
+      const hit = l.items.find((x) => x.key === key) ||
+        l.items.find((x) => x.name.toLowerCase() === nm && (x.qty == null || base == null));
+      if (hit) {
+        if (hit.qty == null && base != null) { hit.unit = fam; hit.key = key; }
+        if (hit.done) { hit.done = false; hit.qty = base; hit.sources = []; }
+        else if (hit.qty != null && base != null) hit.qty += base;
+        else if (base != null) hit.qty = base;
+        if (recipeName && !hit.sources.includes(recipeName)) hit.sources.push(recipeName);
+      } else {
+        l.items.push({ key, name: ing.name.trim(), qty: base, unit: fam, aisle: ing.aisle || "Sonstiges", done: false, sources: recipeName ? [recipeName] : [] });
+      }
+      added++;
+    });
+    if (recipeName && !l.recipes.includes(recipeName)) l.recipes.push(recipeName);
+    store.saveList(l);
+    return added;
+  }
+
+  /* ---------- Rendern ---------- */
+  function renderAll() { renderChips(); renderGrid(); renderList(); renderIngredients(); }
+
+  /* ---------- Zutaten-Übersicht ---------- */
+  function capFirst(t) { t = t.trim().replace(/\s+/g, " "); return t ? t[0].toUpperCase() + t.slice(1) : t; }
+  function similarExisting(q) {
+    const k = q.trim().toLowerCase(); if (k.length < 4) return null;
+    let best = null;
+    allIngredientNames().forEach((e) => { const d = lev(k, e.key); if (d > 0 && d <= (k.length >= 7 ? 2 : 1) && (!best || d < best.d)) best = { e, d }; });
+    return best && best.e;
+  }
+  function renderIngredients() {
+    const box = $("#ing-list"); if (!box) return;
+    const q = ($("#ing-new").value || "").trim().toLowerCase();
+    const all = allIngredientNames();
+    const uses = {};
+    recipes.forEach((r) => { const seen = new Set(); (r.ingredients || []).forEach((i) => { const k = (i.name || "").trim().toLowerCase(); if (k && !seen.has(k)) { seen.add(k); uses[k] = (uses[k] || 0) + 1; } }); });
+    $("#ing-count").textContent = all.length + " Zutaten gespeichert";
+    const exact = q && all.find((e) => e.key === q);
+    const sim = !exact && q ? similarExisting(q) : null;
+    const hint = $("#ing-hint");
+    if (exact) hint.innerHTML = `<b>${esc(exact.name)}</b> ist schon gespeichert (${esc(exact.aisle)}).`;
+    else if (sim) hint.innerHTML = `Ähnlich: <b>${esc(sim.name)}</b>. Meinst du das? Sonst einfach hinzufügen.`;
+    else if (q) hint.textContent = "Neu. Mit «Hinzufügen» speichern.";
+    else hint.textContent = "Tipp: Erst tippen. Gibt es die Zutat schon, siehst du es sofort.";
+    $("#ing-add").disabled = !q || !!exact;
+    const shown = q ? all.filter((e) => e.key.includes(q) || (sim && e.key === sim.key)) : all;
+    if (!all.length) { box.innerHTML = `<div class="empty"><p>Noch keine Zutaten. Trag oben die erste ein oder leg ein Rezept an.</p></div>`; return; }
+    if (!shown.length) { box.innerHTML = ""; return; }
+    const r = rankFn();
+    box.innerHTML = orderedAisles().map((a) => {
+      const rows = shown.filter((e) => e.aisle === a).sort((x, y) => r(x.name, x.aisle) - r(y.name, y.aisle) || x.name.localeCompare(y.name, "de"));
+      if (!rows.length) return "";
+      return `<div class="aisle"><h4>${esc(a)} · ${rows.length}</h4><ul class="items">${rows.map((e) => {
+        const n = uses[e.key] || 0;
+        const isExtra = extras.some((x) => x.trim().toLowerCase() === e.key);
+        return `<li class="ing-row2${q && (e.key === q || (sim && e.key === sim.key)) ? " hit" : ""}">
+          <span class="iname">${esc(e.name)}</span>
+          <span class="use">${n ? (n === 1 ? "in 1 Rezept" : "in " + n + " Rezepten") : "in keinem Rezept"}</span>
+          ${!n && isExtra ? `<button class="x" data-unextra="${esc(e.key)}" aria-label="${esc(e.name)} löschen">×</button>` : "<span></span>"}
+        </li>`; }).join("")}</ul></div>`;
+    }).join("");
+  }
+
+  const HEART = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5s-7.5-4.6-9.3-9.2C1.4 8 3.4 4.5 6.9 4.5c2.1 0 3.6 1.2 5.1 3 1.5-1.8 3-3 5.1-3 3.5 0 5.5 3.5 4.2 6.8-1.8 4.6-9.3 9.2-9.3 9.2z"/></svg>';
+  function heartBtn(r) { return `<button class="heart" data-fav="${esc(r.id)}" aria-pressed="${!!r.fav}" aria-label="${r.fav ? "Aus Favoriten entfernen" : "Zu Favoriten"}">${HEART}</button>`; }
+  async function toggleFav(id) {
+    if (!guard()) return;
+    const r = recipes.find((x) => x.id === id);
+    if (!r) return;
+    const data = clone(r); delete data.id; data.fav = !r.fav;
+    if (detail && detail.r.id === id) { detail.r = Object.assign({}, detail.r, { fav: data.fav }); drawDetail(); }
+    try { await store.saveRecipe(id, data); toast(data.fav ? "Zu Favoriten hinzugefügt" : "Aus Favoriten entfernt"); } catch (err) { fail(err); }
+  }
+
+  function renderChips() {
+    const opts = ["", ...(recipes.some((r) => r.fav) ? ["__fav"] : [])];
+    if (filter.cat && !opts.includes(filter.cat)) filter.cat = "";
+    if (opts.length < 2) { $("#chips").innerHTML = ""; return; }
+    $("#chips").innerHTML = opts.map((c) =>
+      `<button class="chip" data-cat="${esc(c)}" aria-pressed="${filter.cat === c}">${c === "__fav" ? '<span class="h">♥</span> Favoriten' : c ? esc(c) : "Alle"}</button>`).join("");
+  }
+
+  function visible() {
+    const q = filter.q.trim().toLowerCase();
+    return recipes
+      .filter((r) => !filter.cat || r.fav)
+      .filter((r) => !q || r.name.toLowerCase().includes(q) || (r.ingredients || []).some((i) => i.name.toLowerCase().includes(q)))
+      .sort((a, b) => (!!b.fav - !!a.fav) || a.name.localeCompare(b.name, "de"));
+  }
+
+  function renderGrid() {
+    const grid = $("#grid");
+    if (!ready) { grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><p>Rezepte werden geladen …</p></div>`; return; }
+    if (!recipes.length) {
+      grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><h3>Noch keine Rezepte</h3><p>Leg dein erstes Gericht an oder lade ganz unten mit «Sicherung laden» deine bisherigen Rezepte.</p><button class="btn primary" data-act="new">+ Erstes Rezept anlegen</button></div>`;
+      return;
+    }
+    const rows = visible();
+    if (!rows.length) { grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><p>Nichts gefunden für «${esc(filter.q)}».</p></div>`; return; }
+    grid.innerHTML = rows.map((r) => {
+      const n = (r.ingredients || []).length;
+      const peek = (r.ingredients || []).slice(0, 5).map((i) => i.name).join(", ");
+      return `<article class="card">
+        ${heartBtn(r)}
+        <button class="card-open" data-open="${esc(r.id)}">
+          ${r.example ? '<span class="eyebrow"><span class="tag">Beispiel</span></span>' : ""}
+          <h3>${esc(r.name)}</h3>
+          <span class="meta">${hasQty(r) ? (r.servings || 2) + " Portionen · " : ""}${r.minutes ? r.minutes + " Min. · " : ""}${n} Zutaten</span>
+          <span class="peek">${esc(peek)}</span>
+        </button>
+        <button class="btn" data-quick="${esc(r.id)}">+ Auf die Einkaufsliste</button>
+      </article>`;
+    }).join("");
+  }
+
+  function renderList() {
+    const items = list.items || [];
+    const open = items.filter((i) => !i.done).length;
+    const badge = $("#list-count");
+    badge.hidden = !open; badge.textContent = open;
+    $("#list-for").textContent = list.recipes && list.recipes.length ? "Für: " + list.recipes.join(", ") : "";
+    $("#clear-done").disabled = !items.some((i) => i.done);
+    $("#clear-all").disabled = !items.length;
+    $("#copy-list").disabled = !open;
+    const box = $("#list");
+    if (!items.length) {
+      box.innerHTML = `<div class="empty"><h3>Die Liste ist leer</h3><p>Öffne ein Rezept und tippe auf «Auf die Einkaufsliste». Die Zutaten landen hier, nach Abteilung sortiert.</p><button class="btn primary" data-act="to-recipes">Zu den Rezepten</button></div>`;
+      return;
+    }
+    const row = ({ it, idx }) => `
+        <li class="item${it.done ? " done" : ""}${pretty(it.qty, it.unit) ? "" : " noqty"}">
+          <input type="checkbox" id="it-${idx}" data-tick="${idx}" ${it.done ? "checked" : ""} aria-label="${esc(it.name)} erledigt">
+          ${pretty(it.qty, it.unit) ? `<span class="qty">${esc(pretty(it.qty, it.unit))}</span>` : ""}
+          <label class="iname" for="it-${idx}">${esc(it.name)}${it.sources && it.sources.length ? `<span class="src">${esc(it.sources.join(", "))}</span>` : ""}</label>
+          <button class="x" data-del="${idx}" aria-label="${esc(it.name)} entfernen">×</button>
+        </li>`;
+    const all = items.map((it, idx) => ({ it, idx }));
+    if (hasRoute()) {
+      const r = rankFn();
+      all.sort((x, y) => r(x.it.name, x.it.aisle) - r(y.it.name, y.it.aisle) || x.it.name.localeCompare(y.it.name, "de"));
+      const groups = [];
+      all.forEach((x) => { const a = x.it.aisle || "Sonstiges"; const g = groups[groups.length - 1]; if (g && g.a === a) g.rows.push(x); else groups.push({ a, rows: [x] }); });
+      box.innerHTML = `<p class="hint" style="margin:0 0 12px">Sortiert nach eurem Laufweg</p>` + groups.map((g) => `<div class="aisle"><h4>${esc(g.a)}</h4><ul class="items">${g.rows.map(row).join("")}</ul></div>`).join("");
+      return;
+    }
+    box.innerHTML = orderedAisles().map((a) => {
+      const rows = all.filter(({ it }) => (it.aisle || "Sonstiges") === a)
+        .sort((x, y) => (x.it.done - y.it.done) || x.it.name.localeCompare(y.it.name, "de"));
+      if (!rows.length) return "";
+      return `<div class="aisle"><h4>${esc(a)}</h4><ul class="items">${rows.map(row).join("")}</ul></div>`;
+    }).join("");
+  }
+
+  /* ---------- Rezept-Detail ---------- */
+  let detail = null;
+  function openDetail(id) {
+    const r = recipes.find((x) => x.id === id);
+    if (!r) return;
+    detail = { r, servings: r.servings || 2, need: (r.ingredients || []).map(() => true) };
+    drawDetail();
+    showSheet();
+  }
+  function scaled(ing) {
+    const f = detail.servings / (detail.r.servings || 2);
+    return ing.qty == null ? null : ing.qty * f;
+  }
+  function hasQty(r) { return (r.ingredients || []).some((i) => i.qty != null); }
+  function drawDetail() {
+    const { r, servings, need } = detail;
+    const ings = r.ingredients || [];
+    const withQty = hasQty(r);
+    const count = need.filter(Boolean).length;
+    const steps = String(r.steps || "").split(/\n+/).map((s) => s.replace(/^\s*\d+[.)]\s*/, "").trim()).filter(Boolean);
+    $("#panel").innerHTML = `
+      <div class="panel-top">
+        <div>
+          ${r.example ? '<span class="eyebrow"><span class="tag">Beispiel</span></span>' : ""}
+          <h2 id="panel-title">${esc(r.name)}</h2>
+          <span class="meta">${r.minutes ? r.minutes + " Min. · " : ""}${ings.length} Zutaten</span>
+        </div>
+        <span class="panel-btns">${heartBtn(r)}<button class="close" data-act="close" aria-label="Schliessen">×</button></span>
+      </div>
+      <div class="section-label"><span>Zutaten</span>
+        ${withQty ? `<span class="stepper"><button data-srv="-1" aria-label="Weniger Portionen">−</button><span>${servings} Port.</span><button data-srv="1" aria-label="Mehr Portionen">+</button></span>` : ""}
+      </div>
+      <ul class="ing${withQty ? "" : " noqty"}">${ings.map((i, k) => `
+        <li class="${need[k] ? "" : "off"}">
+          <input type="checkbox" id="need-${k}" data-need="${k}" ${need[k] ? "checked" : ""} aria-label="${esc(i.name)} einkaufen">
+          ${withQty ? `<span class="qty">${esc(pretty(toBase(scaled(i), i.unit), family(i.unit)) || "")}</span>` : ""}
+          <label for="need-${k}">${esc(i.name)}</label>
+        </li>`).join("")}</ul>
+      <p class="hint">Hast du etwas schon zu Hause? Häkchen weg, dann kommt es nicht auf die Liste.</p>
+      <div class="sticky-cta"><button class="btn primary" data-act="add" ${count ? "" : "disabled"}>${count} Zutaten auf die Einkaufsliste</button></div>
+      ${steps.length ? `<div class="section-label"><span>Zubereitung</span></div><ol class="steps">${steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>` : ""}
+      ${r.notes ? `<div class="section-label"><span>Notiz</span></div><p class="notes">${esc(r.notes)}</p>` : ""}
+      <div class="panel-actions">
+        <span class="actions"><button class="btn" data-act="edit">Bearbeiten</button><button class="btn" data-act="copy">Kopieren</button></span>
+        <button class="btn danger" data-act="delete">Rezept löschen</button>
+      </div>`;
+  }
+
+  /* ---------- Rezept-Editor ---------- */
+  let editing = null;
+  function openEditor(r) {
+    editing = r ? clone(r) : { name: "", category: "Anderes", servings: 2, minutes: "", ingredients: [{ qty: null, unit: "", name: "", aisle: "Sonstiges" }], steps: "", notes: "" };
+    editing.withQty = r ? (r.withQty != null ? r.withQty : hasQty(r)) : false;
+    drawEditor(); showSheet();
+    setTimeout(() => { const f = $("#f-name"); if (f && !r) f.focus(); }, 50);
+  }
+  const opt = (arr, cur) => arr.map((v) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(v || "–")}</option>`).join("");
+  function ingRow(i, k) {
+    return `<div class="ing-row" data-row="${k}">
+      <input class="field qf" id="q-${k}" inputmode="decimal" placeholder="Menge" value="${i.qty == null ? "" : esc(String(i.qty))}" aria-label="Menge">
+      <select class="field qf" id="u-${k}" aria-label="Einheit">${opt(UNITS, i.unit || "")}</select>
+      <input class="field" id="n-${k}" autocomplete="off" aria-autocomplete="list" placeholder="Zutat" value="${esc(i.name)}" aria-label="Zutat">
+      <select class="field aisle-sel" id="a-${k}" aria-label="Abteilung" ${i.name && guessAisle(i.name) !== i.aisle ? 'data-manual="1"' : ""}>${opt(AISLES, i.aisle || "Sonstiges")}</select>
+      <button type="button" class="x" data-rmrow="${k}" aria-label="Zutat entfernen">×</button>
+    </div>`;
+  }
+  function drawEditor(err) {
+    const e = editing;
+    $("#panel").innerHTML = `
+      <div class="panel-top"><h2 id="panel-title">${e.id ? "Rezept bearbeiten" : e.isCopy ? "Rezept kopieren" : "Neues Rezept"}</h2><button class="close" data-act="close" aria-label="Schliessen">×</button></div>
+      <form class="form" id="editor">
+        <div class="row">
+          <label>Name<input class="field" id="f-name" value="${esc(e.name)}" placeholder="z. B. Älplermagronen" required></label>
+          <label ${e.withQty ? "" : "hidden"}>Portionen<input class="field" id="f-srv" type="number" min="1" max="40" value="${esc(e.servings)}"></label>
+          <label>Zeit (Min.)<input class="field" id="f-min" type="number" min="0" value="${esc(e.minutes || "")}"></label>
+        </div>
+        <div>
+          <div class="section-label" style="margin-top:6px"><span>Zutaten</span>
+            <label class="switch"><input type="checkbox" id="f-withqty" ${e.withQty ? "checked" : ""}> Mit Mengenangaben</label></div>
+          <div class="ing-edit${e.withQty ? "" : " noqty"}" id="ing-edit">${e.ingredients.map(ingRow).join("")}</div>
+          <button type="button" class="btn ghost" data-act="addrow" style="margin-top:8px">+ Zutat</button>
+          <p class="hint">Die Abteilung wird beim Tippen erkannt. Passt sie nicht, wähl sie einfach von Hand.</p>
+        </div>
+        <label>Zubereitung (ein Schritt pro Zeile)<textarea class="field" id="f-steps">${esc(e.steps)}</textarea></label>
+        <label>Notiz<input class="field" id="f-notes" value="${esc(e.notes || "")}" placeholder="z. B. schmeckt aufgewärmt noch besser"></label>
+        ${err ? `<p class="err">${esc(err)}</p>` : ""}
+        <div class="panel-actions"><button type="button" class="btn ghost" data-act="close">Abbrechen</button><button class="btn primary" type="submit">Speichern</button></div>
+      </form>`;
+  }
+  function readEditor() {
+    const e = editing;
+    e.name = $("#f-name").value.trim();
+    e.servings = Math.max(1, parseInt($("#f-srv").value, 10) || 2);
+    e.minutes = parseInt($("#f-min").value, 10) || null;
+    e.steps = $("#f-steps").value;
+    e.notes = $("#f-notes").value.trim();
+    e.withQty = $("#f-withqty").checked;
+    e.ingredients = [...document.querySelectorAll(".ing-row")].map((row) => {
+      const k = row.dataset.row;
+      return { qty: e.withQty ? parseQty($("#q-" + k).value) : null, unit: e.withQty ? $("#u-" + k).value : "", name: $("#n-" + k).value.trim(), aisle: $("#a-" + k).value };
+    });
+  }
+
+  /* ---------- Laufweg im Laden ---------- */
+  function drawRoute() {
+    const o = routeList();
+    $("#panel").innerHTML = `
+      <div class="panel-top"><div><h2 id="panel-title">Laufweg in der Migros</h2>
+        <p class="meta" style="max-width:56ch;margin:0">Zieh die Zutaten am Griff <span aria-hidden="true">⠿</span> in die Reihenfolge, in der ihr sie im Laden antrefft. Die Einkaufsliste folgt dann genau diesem Weg. Neue Zutaten reihen sich automatisch bei ihrer Abteilung ein.</p></div>
+        <button class="close" data-act="close" aria-label="Schliessen">×</button></div>
+      ${o.length ? `<ol class="route" id="route-list">${o.map((e, i) => `
+        <li data-key="${esc(e.key)}"><span class="grip" aria-hidden="true">⠿</span><span class="route-n">${i + 1}</span><span class="route-name">${esc(e.name)}<span class="src">${esc(e.aisle)}</span></span>
+          <span class="route-btns">
+            <button class="mv" data-mv="${i}" data-dir="-1" aria-label="${esc(e.name)} nach oben" ${i === 0 ? "disabled" : ""}>↑</button>
+            <button class="mv" data-mv="${i}" data-dir="1" aria-label="${esc(e.name)} nach unten" ${i === o.length - 1 ? "disabled" : ""}>↓</button>
+          </span></li>`).join("")}</ol>` : `<div class="empty" style="margin-top:16px"><p>Noch keine Zutaten. Leg zuerst ein Rezept an.</p></div>`}
+      <div class="panel-actions"><button class="btn ghost" data-act="route-reset">Nach Abteilungen zurücksetzen</button><button class="btn primary" data-act="close">Fertig</button></div>`;
+  }
+  function saveRouteFromDom() {
+    if (!guard()) { drawRoute(); return; }
+    routeItems = [...document.querySelectorAll("#route-list li")].map((li) => li.dataset.key);
+    renderList();
+    store.saveRoute(routeItems).catch(fail);
+  }
+  function renumber() {
+    const lis = [...document.querySelectorAll("#route-list li")];
+    lis.forEach((li, i) => {
+      li.querySelector(".route-n").textContent = i + 1;
+      const [up, down] = li.querySelectorAll(".mv");
+      up.dataset.mv = down.dataset.mv = i; up.disabled = i === 0; down.disabled = i === lis.length - 1;
+    });
+  }
+  function moveItem(i, dir) {
+    const lis = [...document.querySelectorAll("#route-list li")];
+    const li = lis[i], other = lis[i + dir];
+    if (!li || !other) return;
+    if (dir < 0) other.before(li); else other.after(li);
+    renumber(); saveRouteFromDom();
+    const b = li.querySelector(`.mv[data-dir="${dir}"]`);
+    if (b && !b.disabled) b.focus(); else li.querySelector(".mv:not(:disabled)")?.focus();
+  }
+  /* Ziehen mit Maus oder Finger am Griff */
+  let drag = null;
+  document.addEventListener("pointerdown", (e) => {
+    const grip = e.target.closest(".grip"); if (!grip) return;
+    const li = grip.closest("li"); if (!li) return;
+    e.preventDefault();
+    drag = { li, id: e.pointerId, y: e.clientY, moved: false };
+    li.classList.add("dragging");
+    grip.setPointerCapture(e.pointerId);
+  });
+  document.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    drag.y = e.clientY;
+    const listEl = $("#route-list"); if (!listEl) return;
+    const sibs = [...listEl.children].filter((x) => x !== drag.li);
+    const after = sibs.find((x) => { const r = x.getBoundingClientRect(); return e.clientY < r.top + r.height / 2; });
+    if (after) { if (drag.li.nextElementSibling !== after) { listEl.insertBefore(drag.li, after); drag.moved = true; renumber(); } }
+    else if (listEl.lastElementChild !== drag.li) { listEl.appendChild(drag.li); drag.moved = true; renumber(); }
+    const panel = $("#panel"), pr = panel.getBoundingClientRect();
+    if (e.clientY < pr.top + 60) panel.scrollTop -= 12; else if (e.clientY > pr.bottom - 60) panel.scrollTop += 12;
+  });
+  function endDrag(e) {
+    if (!drag || (e && e.pointerId !== drag.id)) return;
+    drag.li.classList.remove("dragging");
+    const moved = drag.moved; drag = null;
+    if (moved) saveRouteFromDom();
+  }
+  document.addEventListener("pointerup", endDrag);
+  document.addEventListener("pointercancel", endDrag);
+
+  /* ---------- Sheet, Toast, Ansicht ---------- */
+  let lastFocus = null;
+  function showSheet() { if ($("#sheet").hidden) lastFocus = document.activeElement; $("#sheet").hidden = false; document.body.style.overflow = "hidden"; $("#panel").scrollTop = 0; }
+  function hideSheet() { routeOpen = false; $("#sheet").hidden = true; document.body.style.overflow = ""; detail = null; editing = null; if (lastFocus && lastFocus.focus) lastFocus.focus(); }
+  let tt;
+  function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => (t.hidden = true), 2600); }
+  function setView(v) {
+    $("#view-recipes").hidden = v !== "recipes";
+    $("#view-list").hidden = v !== "list";
+    $("#view-ingredients").hidden = v !== "ingredients";
+    hideSugg();
+    document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", t.dataset.view === v));
+    try { localStorage.setItem("rb-view", v); } catch (e) {}
+  }
+  function arm(btn, label, fn) {
+    if (btn.classList.contains("armed")) { fn(); return; }
+    const old = btn.textContent;
+    btn.classList.add("armed"); btn.textContent = label;
+    setTimeout(() => { btn.classList.remove("armed"); btn.textContent = old; }, 3000);
+  }
+  function guard() { if (!store) { toast("Einen Moment, das Rezeptbuch lädt noch."); return false; } if (readOnly) { toast("Du kannst dieses Rezeptbuch nur ansehen."); return false; } return true; }
+
+  /* ---------- Events ---------- */
+  document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => setView(t.dataset.view)));
+  $("#search").addEventListener("input", (e) => { filter.q = e.target.value; renderGrid(); });
+  $("#new-recipe").addEventListener("click", () => openEditor(null));
+
+  document.addEventListener("click", (e) => {
+    const t = e.target.closest("button");
+    if (!t) { if (e.target === $("#sheet")) hideSheet(); return; }
+    if (t.dataset.cat !== undefined) { filter.cat = t.dataset.cat; renderChips(); renderGrid(); return; }
+    if (t.dataset.mv !== undefined) { if (!guard()) return; moveItem(+t.dataset.mv, +t.dataset.dir); return; }
+    if (t.id === "route") { routeOpen = true; drawRoute(); showSheet(); return; }
+    if (t.dataset.act === "route-reset") {
+      if (!guard()) return;
+      arm(t, "Wirklich zurücksetzen?", () => { routeItems = null; drawRoute(); renderList(); store.saveRoute(null).catch(fail); });
+      return;
+    }
+    if (t.dataset.unextra) {
+      if (!guard()) return;
+      const k = t.dataset.unextra;
+      extras = extras.filter((x) => x.trim().toLowerCase() !== k);
+      const m = Object.assign({}, extraAisles); delete m[k]; extraAisles = m;
+      routeItems = routeItems ? routeItems.filter((x) => x !== k) : routeItems;
+      renderIngredients();
+      store.saveExtras(extras, extraAisles).then(() => toast("Zutat gelöscht"), fail);
+      return;
+    }
+    if (t.id === "exp") { exportBackup(); return; }
+    if (t.dataset.act === "do-import") { if (pendingImport) { writeAll(pendingImport); localStorage.setItem("rb-seeded", "1"); location.reload(); } return; }
+    if (t.dataset.fav) { toggleFav(t.dataset.fav); return; }
+    if (t.dataset.open) { openDetail(t.dataset.open); return; }
+    if (t.dataset.quick) {
+      if (!guard()) return;
+      const r = recipes.find((x) => x.id === t.dataset.quick);
+      const n = addToList(r.ingredients || [], r.name);
+      toast(`${n} Zutaten für ${r.name} auf der Liste`); return;
+    }
+    if (t.dataset.srv) { detail.servings = Math.max(1, Math.min(40, detail.servings + +t.dataset.srv)); drawDetail(); return; }
+    if (t.dataset.del) { if (!guard()) return; const l = clone(list); l.items.splice(+t.dataset.del, 1); store.saveList(l); return; }
+    if (t.dataset.rmrow) { readEditor(); editing.ingredients.splice(+t.dataset.rmrow, 1); drawEditor(); return; }
+    const act = t.dataset.act;
+    if (act === "close") hideSheet();
+    else if (act === "new") openEditor(null);
+    else if (act === "to-recipes") setView("recipes");
+    else if (act === "addrow") {
+      readEditor();
+      editing.ingredients.push({ qty: null, unit: "", name: "", aisle: "Sonstiges" });
+      drawEditor();
+      const k = editing.ingredients.length - 1; const f = $(editing.withQty ? "#q-" + k : "#n-" + k); if (f) f.focus();
+    }
+    else if (act === "add") {
+      if (!guard()) return;
+      const r = detail.r;
+      const picked = (r.ingredients || []).filter((_, k) => detail.need[k]).map((i) => Object.assign({}, i, { qty: scaled(i) }));
+      const n = addToList(picked, r.name);
+      hideSheet(); toast(`${n} Zutaten auf der Einkaufsliste`);
+    }
+    else if (act === "edit") { const r = detail.r; openEditor(r); }
+    else if (act === "copy") {
+      const c = clone(detail.r);
+      delete c.id; delete c.example;
+      c.name = c.name + " (Kopie)"; c.isCopy = true;
+      openEditor(c);
+      setTimeout(() => { const f = $("#f-name"); if (f) { f.focus(); f.select(); } }, 60);
+    }
+    else if (act === "delete") {
+      if (!guard()) return;
+      arm(t, "Wirklich löschen?", async () => {
+        const id = detail.r.id; hideSheet();
+        try { await store.deleteRecipe(id); toast("Rezept gelöscht"); } catch (err) { fail(err); }
+      });
+    }
+  });
+
+
+  /* ---------- Vorschläge beim Tippen ---------- */
+  const VOCAB = ["Äpfel", "Apfelmus", "Aubergine", "Avocado", "Backpulver", "Balsamico", "Bananen", "Basilikum", "Basmatireis", "BBQ Sauce", "Bier", "Birnen", "Blätterteig", "Blumenkohl", "Bouillon", "Bratwurst", "Broccoli", "Brot", "Bündnerfleisch", "Burgerbrot", "Butter", "Champignons", "Cervelat", "Cherrytomaten", "Chilipulver", "Couscous", "Crème fraîche", "Crevetten", "Curry", "Currypaste", "Dosenmais", "Eier", "Emmentaler", "Erbsen", "Erdbeeren", "Essig", "Essiggurken", "Fenchel", "Feta", "Fondue", "Frischkäse", "Gnocchi", "Gruyère", "Gurken", "Hackfleisch", "Haferflocken", "Halbrahm", "Hefe", "Himbeeren", "Honig", "Hörnli", "Ingwer", "Jalapeños", "Joghurt", "Kabeljau", "Kalbfleisch", "Kapern", "Karotten", "Kartoffeln", "Käse", "Kichererbsen", "Kidneybohnen", "Knoblauch", "Knöpfli", "Kokosmilch", "Koriander", "Kuchenteig", "Lachs", "Lasagneblätter", "Lauch", "Linsen", "Magronen", "Mais", "Mascarpone", "Mayonnaise", "Mehl", "Milch", "Mozzarella", "Muskatnuss", "Nüsslisalat", "Oliven", "Olivenöl", "Orangen", "Oregano", "Paniermehl", "Paprikapulver", "Parmesan", "Pelati", "Penne", "Peperoni", "Pesto", "Petersilie", "Pfeffer", "Pilze", "Pizzateig", "Polenta", "Pommes", "Poulet", "Pouletbrüstli", "Puderzucker", "Quark", "Raclettekäse", "Rahm", "Randen", "Rapsöl", "Reibkäse", "Reis", "Risottoreis", "Rindfleisch", "Romanesco", "Rösti", "Rosmarin", "Rucola", "Rüebli", "Salami", "Salat", "Salz", "Sauerrahm", "Schinken", "Schnittlauch", "Schokolade", "Schweinefleisch", "Senf", "Silberzwiebeln", "Sojasauce", "Spaghetti", "Spätzli", "Speckstreifen", "Speckwürfel", "Spinat", "Süsskartoffeln", "Thon", "Thymian", "Tofu", "Tomaten", "Tomatenmark", "Tomatensauce", "Tortillas", "Vanillezucker", "Weisswein", "Rotwein", "Zimt", "Zitronen", "Zitronensaft", "Zopf", "Zucchetti", "Zucker", "Zwiebeln"];
+  function lev(a, b) {
+    const m = a.length, n = b.length; if (!m) return n; if (!n) return m;
+    let prev = Array.from({ length: n + 1 }, (_, j) => j);
+    for (let i = 1; i <= m; i++) {
+      const cur = [i];
+      for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = cur;
+    }
+    return prev[n];
+  }
+  function knownNames() {
+    const map = new Map();
+    recipes.forEach((r) => (r.ingredients || []).forEach((i) => {
+      const k = (i.name || "").trim().toLowerCase(); if (!k) return;
+      const e = map.get(k); if (e) e.n++; else map.set(k, { name: i.name.trim(), n: 1 });
+    }));
+    extras.forEach((v) => { const k = v.toLowerCase(); if (!map.has(k)) map.set(k, { name: v, n: 1 }); });
+    VOCAB.forEach((v) => { const k = v.toLowerCase(); if (!map.has(k)) map.set(k, { name: v, n: 0 }); });
+    return [...map.values()];
+  }
+  function suggestions(q) {
+    q = q.trim().toLowerCase();
+    if (!q) return [];
+    const out = [];
+    knownNames().forEach((e) => {
+      const n = e.name.toLowerCase();
+      if (n === q) return;
+      let s = -1;
+      if (n.startsWith(q)) s = 3;
+      else if (n.split(/[\s-]+/).some((w) => w.startsWith(q))) s = 2;
+      else if (q.length >= 3 && n.includes(q)) s = 1;
+      else if (q.length >= 4) {
+        let d = lev(q, n);
+        for (let L = q.length - 1; L <= q.length + 1; L++) if (L > 0) d = Math.min(d, lev(q, n.slice(0, L)));
+        if (d <= (q.length >= 7 ? 2 : 1)) s = 0.5;
+      }
+      if (s >= 0) out.push({ e, s });
+    });
+    if (out.some((o) => o.s >= 1)) for (let i = out.length - 1; i >= 0; i--) if (out[i].s < 1 && out[i].e.n === 0) out.splice(i, 1);
+    out.sort((a, b) => b.s - a.s || b.e.n - a.e.n || a.e.name.localeCompare(b.e.name, "de"));
+    return out.slice(0, 6).map((o) => ({ name: o.e.name, fuzzy: o.s < 1, mine: o.e.n > 0 }));
+  }
+  const sug = document.createElement("div");
+  sug.className = "sugg"; sug.id = "sugg"; sug.hidden = true; sug.setAttribute("role", "listbox");
+  document.body.appendChild(sug);
+  let sugInput = null, sugItems = [], sugIdx = -1;
+  function splitAdder(v) {
+    const m = v.match(/^([\d.,\/½¼¾]+\s*(?:kg|g|ml|dl|l|EL|TL|Stk|Bund|Dose|Pck|Becher)?\.?\s+)?([\s\S]*)$/i);
+    return { pre: m[1] || "", q: m[2] };
+  }
+  function hl(name, q) {
+    q = q.trim();
+    if (q && name.toLowerCase().startsWith(q.toLowerCase())) return "<b>" + esc(name.slice(0, q.length)) + "</b>" + esc(name.slice(q.length));
+    return esc(name);
+  }
+  function showSugg(input) {
+    const q = input.id === "adder-name" ? splitAdder(input.value).q : input.value;
+    sugItems = suggestions(q); sugIdx = -1; sugInput = input;
+    if (!sugItems.length) { hideSugg(); return; }
+    sug.innerHTML = sugItems.map((s, i) => `<div class="sugg-row" role="option" id="sg-${i}" data-sg="${i}"><span>${hl(s.name, q)}</span>${s.fuzzy ? '<span class="sugg-tag">Meintest du das?</span>' : s.mine ? '<span class="sugg-tag">schon verwendet</span>' : ""}</div>`).join("");
+    const r = input.getBoundingClientRect();
+    const w = Math.min(Math.max(r.width, 220), window.innerWidth - 16);
+    sug.style.width = w + "px";
+    sug.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + "px";
+    sug.style.top = (r.bottom + 4) + "px";
+    sug.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+  }
+  function hideSugg() {
+    sug.hidden = true; sugIdx = -1;
+    if (sugInput) sugInput.setAttribute("aria-expanded", "false");
+  }
+  function markSugg() {
+    [...sug.children].forEach((c, i) => c.classList.toggle("on", i === sugIdx));
+    if (sugIdx >= 0) { sug.children[sugIdx].scrollIntoView({ block: "nearest" }); sugInput.setAttribute("aria-activedescendant", "sg-" + sugIdx); }
+  }
+  function pickSugg(i) {
+    const s = sugItems[i]; if (!s || !sugInput) return;
+    const pre = sugInput.id === "adder-name" ? splitAdder(sugInput.value).pre : "";
+    sugInput.value = pre + s.name;
+    sugInput.dispatchEvent(new Event("input", { bubbles: true }));
+    hideSugg(); sugInput.focus();
+  }
+  sug.addEventListener("mousedown", (e) => e.preventDefault());
+  sug.addEventListener("click", (e) => { const row = e.target.closest("[data-sg]"); if (row) pickSugg(+row.dataset.sg); });
+  document.addEventListener("keydown", (e) => {
+    if (sug.hidden || e.target !== sugInput) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); sugIdx = (sugIdx + 1) % sugItems.length; markSugg(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); sugIdx = (sugIdx - 1 + sugItems.length) % sugItems.length; markSugg(); }
+    else if ((e.key === "Enter" || e.key === "Tab") && sugIdx >= 0) { e.preventDefault(); pickSugg(sugIdx); }
+    else if (e.key === "Escape") { e.stopPropagation(); hideSugg(); }
+  }, true);
+  document.addEventListener("focusout", (e) => { if (e.target === sugInput) setTimeout(() => { if (document.activeElement !== sugInput) hideSugg(); }, 150); });
+  document.addEventListener("scroll", (e) => { if (!sug.hidden && e.target !== sug) hideSugg(); }, true);
+  window.addEventListener("resize", hideSugg);
+
+  document.addEventListener("input", (e) => {
+    const t = e.target;
+    let sel = null;
+    if (/^n-\d+$/.test(t.id) || t.id === "adder-name" || t.id === "ing-new") showSugg(t);
+    if (t.id === "ing-new") renderIngredients();
+    if (/^n-\d+$/.test(t.id)) sel = $("#a-" + t.id.slice(2));
+    else if (t.id === "adder-name") sel = $("#adder-aisle");
+    else if (t.id === "ing-new") sel = $("#ing-aisle");
+    if (!sel || sel.dataset.manual) return;
+    sel.value = guessAisle(t.value) || "Sonstiges";
+  });
+
+  document.addEventListener("change", (e) => {
+    const t = e.target;
+    if (t.id === "f-withqty") {
+      const keep = editing.ingredients;
+      const wasOn = editing.withQty;
+      readEditor();
+      if (!wasOn && t.checked) editing.ingredients.forEach((i, k) => { if (keep[k]) { i.qty = keep[k].qty; i.unit = keep[k].unit; } });
+      editing.withQty = t.checked; drawEditor(); return;
+    }
+    if (/^a-\d+$/.test(t.id) || t.id === "adder-aisle" || t.id === "ing-aisle") t.dataset.manual = "1";
+    if (t.dataset.need !== undefined) { detail.need[+t.dataset.need] = t.checked; drawDetail(); const f = $("#need-" + t.dataset.need); if (f) f.focus(); }
+    if (t.dataset.tick !== undefined) {
+      if (!guard()) { t.checked = !t.checked; return; }
+      const l = clone(list); l.items[+t.dataset.tick].done = t.checked; store.saveList(l);
+    }
+  });
+
+  document.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (e.target.id === "ing-form") {
+      if (!guard()) return;
+      const nm = capFirst($("#ing-new").value), lk = nm.toLowerCase();
+      if (!nm) return;
+      const ex = allIngredientNames().find((x) => x.key === lk);
+      if (ex) { toast(ex.name + " ist schon gespeichert"); return; }
+      extras = extras.concat(nm).slice(-300);
+      extraAisles = Object.assign({}, extraAisles, { [lk]: $("#ing-aisle").value });
+      try { await store.saveExtras(extras, extraAisles); toast(nm + " gespeichert"); } catch (err) { fail(err); }
+      $("#ing-new").value = ""; delete $("#ing-aisle").dataset.manual; $("#ing-aisle").value = "Sonstiges";
+      renderIngredients(); $("#ing-new").focus();
+      return;
+    }
+    if (e.target.id === "adder") {
+      if (!guard()) return;
+      const raw = $("#adder-name").value.trim();
+      if (!raw) return;
+      const m = raw.match(/^([\d.,\/½¼¾]+)\s*(kg|g|ml|dl|l|EL|TL|Stk|Bund|Dose|Pck|Becher)?\.?\s+(.+)$/i);
+      let ing = { qty: null, unit: "", name: raw, aisle: $("#adder-aisle").value };
+      if (m) { const u = m[2] ? UNITS.find((x) => x.toLowerCase() === m[2].toLowerCase()) || "" : ""; ing = { qty: parseQty(m[1]), unit: u, name: m[3], aisle: ing.aisle }; }
+      addToList([ing], null);
+      const nm = ing.name.trim(), lk = nm.toLowerCase();
+      if (nm && !knownNames().some((e) => e.name.toLowerCase() === lk)) { extras = extras.concat(nm).slice(-300); extraAisles = Object.assign({}, extraAisles, { [lk]: ing.aisle }); store.saveExtras(extras, extraAisles).catch(() => {}); }
+      $("#adder-name").value = ""; $("#adder-name").focus();
+      delete $("#adder-aisle").dataset.manual; $("#adder-aisle").value = "Sonstiges";
+      return;
+    }
+    if (e.target.id === "editor") {
+      readEditor();
+      const r = editing;
+      r.ingredients = r.ingredients.filter((i) => i.name);
+      if (!r.name) { drawEditor("Gib dem Rezept einen Namen."); return; }
+      if (!r.ingredients.length) { r.ingredients.push({ qty: null, unit: "", name: "", aisle: "Sonstiges" }); drawEditor("Füge mindestens eine Zutat hinzu."); return; }
+      if (!guard()) return;
+      const id = r.id; const wasCopy = r.isCopy; const data = Object.assign({}, r); delete data.id; delete data.example; delete data.isCopy;
+      data.updatedAt = Date.now();
+      hideSheet();
+      try { await store.saveRecipe(id, data); toast(id ? "Rezept gespeichert" : wasCopy ? "Kopie angelegt" : "Rezept angelegt"); } catch (err) { fail(err); }
+    }
+  });
+
+  $("#clear-done").addEventListener("click", () => { if (!guard()) return; const l = clone(list); l.items = l.items.filter((i) => !i.done); if (!l.items.length) l.recipes = []; store.saveList(l); });
+  $("#clear-all").addEventListener("click", (e) => { if (!guard()) return; arm(e.currentTarget, "Wirklich leeren?", () => store.saveList({ items: [], recipes: [] })); });
+  $("#copy-list").addEventListener("click", () => {
+    const line = (i) => "- " + (pretty(i.qty, i.unit) ? pretty(i.qty, i.unit) + " " : "") + i.name;
+    let text;
+    if (hasRoute()) {
+      const r = rankFn();
+      text = (list.items || []).filter((i) => !i.done).sort((x, y) => r(x.name, x.aisle) - r(y.name, y.aisle)).map(line).join("\n");
+    } else {
+      text = orderedAisles().map((a) => {
+        const rows = (list.items || []).filter((i) => !i.done && (i.aisle || "Sonstiges") === a);
+        return rows.length ? a + "\n" + rows.map(line).join("\n") : "";
+      }).filter(Boolean).join("\n\n");
+    }
+    const done = () => toast("Liste kopiert");
+    try {
+      navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text));
+    } catch (err) { fallbackCopy(text); }
+  });
+  function fallbackCopy(text) {
+    const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+    ta.remove(); toast(ok ? "Liste kopiert" : "Kopieren geht hier nicht. Markiere die Liste von Hand.");
+  }
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#sheet").hidden) hideSheet(); });
+
+  $("#adder-aisle").innerHTML = opt(AISLES, "Sonstiges");
+  $("#ing-aisle").innerHTML = opt(AISLES, "Sonstiges");
+  try { const v = localStorage.getItem("rb-view"); if (v === "list" || v === "ingredients") setView(v); } catch (e) {}
+  $("#imp-file").addEventListener("change", (e) => { const f = e.target.files && e.target.files[0]; if (f) importBackup(f); e.target.value = ""; });
+  if ("serviceWorker" in navigator && location.protocol !== "file:") {
+    window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+  }
+  boot();
+})();
+</script>
+</body>
+</html>
