@@ -14,6 +14,7 @@ Persönliches Rezeptbuch mit Einkaufsliste nach Laufweg in der Migros. Installie
 - `manifest.webmanifest`: App-Name, Farben, Icons, `"id": "/rezeptbuch/"`
 - `rochen-192.png`, `rochen-512.png`, `rochen-maskable-512.png`: App-Symbol (Rochen-Koch, eigenes ChatGPT-Bild)
 - `.nojekyll`, `README.md`
+- `cloudflare/worker.js`: Sync-Server (Cloudflare Worker mit D1-Datenbank). Läuft nicht auf GitHub, sondern wird im Cloudflare-Dashboard eingefügt.
 
 ## Regeln bei jeder Änderung
 1. **In `sw.js` die `VERSION` hochzählen** (z. B. `rezeptbuch-v5` auf `rezeptbuch-v6`). Sonst bleiben Dateien im Cache der Handys alt.
@@ -23,6 +24,8 @@ Persönliches Rezeptbuch mit Einkaufsliste nach Laufweg in der Migros. Installie
 5. `noindex`-Meta bleibt drin (Suchmaschinen ausgeschlossen).
 6. Keine geschützten Figuren (z. B. Pokémon) in Bildern oder Symbolen.
 7. Bestehende Daten müssen erhalten bleiben: Speicherschlüssel nicht umbenennen, alte Werte beim Laden migrieren.
+8. **Worker geändert?** `cloudflare/worker.js` danach im Cloudflare-Dashboard neu einfügen und bereitstellen (GitHub allein reicht nicht). Die App-Seite muss mit alter und neuer Worker-Version klarkommen.
+9. Neue gespeicherte Daten, die synchronisiert werden sollen, brauchen eine eigene Zeilenart in `localRows()` und `applyRemote()` in `index.html`.
 
 ## Datenspeicher (localStorage im Browser, nur auf dem Gerät)
 - `rb-recipes`: Rezepte `[{ id, name, minutes, servings, withQty, fav, steps, notes, updatedAt, ingredients: [{ name, qty, unit, aisle }] }]`
@@ -31,6 +34,8 @@ Persönliches Rezeptbuch mit Einkaufsliste nach Laufweg in der Migros. Installie
 - `rb-route`: Laufweg als Liste von Zutaten-Schlüsseln (Kleinbuchstaben) in Ladenreihenfolge
 - `rb-order`: Reihenfolge der Abteilungen (meist leer, Standard gilt)
 - `rb-seeded`, `rb-view`: interne Hilfswerte
+- `rb-sync`: Sync-Zustand `{ code, rev, last, shadow, pending }` (nur auf dem Gerät, wird nicht synchronisiert)
+- Listeneinträge haben eine feste `id` (fehlende werden beim Laden ergänzt)
 - Sicherung (Datei-Export und -Import): JSON mit `app: "mein-rezeptbuch"`, `version: 1`, `savedAt` und denselben Feldern. Import ersetzt alles.
 
 ## Funktionen
@@ -45,6 +50,12 @@ Persönliches Rezeptbuch mit Einkaufsliste nach Laufweg in der Migros. Installie
 - Abteilungen in Laufweg-Reihenfolge: Bäckerei, Früchte & Gemüse, Milch, Käse & Eier, Fleisch & Fisch, Beilagen & Saisonales, Öl, Saucen & Eingemachtes, Teigwaren, Reis & Backzutaten, Konserven & International, Gewürze, Tiefkühl, Frühstück & Snacks, Getränke, Sonstiges
 - Hell- und Dunkelmodus, Android-Zurück-Taste, «Sicherung speichern / laden»
 
+## Synchronisierung
+- Zwei Handys teilen ein «gemeinsames Rezeptbuch» über einen 16-stelligen Code (Link `…/rezeptbuch/#haushalt=CODE`). Wer den Code hat, kann lesen und ändern.
+- Server: Cloudflare Worker + D1 (`cloudflare/worker.js`). Adresse steht in `index.html` als `SYNC_URL`. Ist sie leer, ist der Sync-Knopf ausgeblendet.
+- Daten bleiben weiterhin zuerst im localStorage (offline-fähig). Jedes Rezept (`r:id`), jeder Listeneintrag (`i:id`), jede eigene Zutat (`x:name`) sowie `m:listRecipes`, `m:route`, `m:order` ist eine eigene Zeile.
+- Abgleich beim Öffnen, bei Rückkehr in die App, alle 5 Sekunden und kurz nach jeder Änderung. Gleiche Zeile auf beiden Handys geändert: neuere gewinnt. Löschungen werden als leere Zeile übertragen.
+- Beitreten: wahlweise eigene Daten dazunehmen (zusammenführen) oder ersetzen. «Sicherung laden» ersetzt auch beim anderen Handy.
+
 ## Offene Ideen
-- Rezepte mit dem Mitbewohner teilen: einzelnes Rezept teilen oder Sicherung zusammenführen statt ersetzen
-- Echte Synchronisierung über Firebase (Firestore, Standort Zürich, anonyme Anmeldung, gemeinsamer Haushalts-Code). Vorerst zurückgestellt.
+- (keine)

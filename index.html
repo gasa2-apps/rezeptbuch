@@ -200,6 +200,9 @@ textarea.field { min-height: 130px; resize: vertical; }
 .mode { font-size: 12px; color: var(--muted); text-align: center; margin-top: 30px; }
 .backup { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 10px; }
 .backup .btn { font-size: 13px; padding: 7px 12px; }
+.code-box { font-family: var(--mono); font-size: 22px; letter-spacing: .06em; background: var(--accent-soft); color: var(--ink); border-radius: 12px; padding: 14px 16px; text-align: center; overflow-wrap: anywhere; }
+.form label.switch { display: flex; color: var(--ink); font-weight: 500; }
+.code-in { font-family: var(--mono); letter-spacing: .05em; text-transform: uppercase; }
 </style>
 </head>
 <body>
@@ -265,6 +268,7 @@ textarea.field { min-height: 130px; resize: vertical; }
     <div class="mode">
       <p id="mode" style="margin:0">Deine Daten sind auf diesem Handy gespeichert und funktionieren auch offline.</p>
       <div class="backup">
+        <button class="btn" id="sync-open" hidden>Mit Mitbewohner synchronisieren</button>
         <button class="btn" id="exp">Sicherung speichern</button>
         <label class="btn" for="imp-file" style="cursor:pointer">Sicherung laden</label>
         <input type="file" id="imp-file" accept="application/json,.json" hidden>
@@ -346,6 +350,7 @@ textarea.field { min-height: 130px; resize: vertical; }
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const clone = (o) => JSON.parse(JSON.stringify(o));
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
   let recipes = [];
   let list = { items: [], recipes: [] };
@@ -430,10 +435,12 @@ textarea.field { min-height: 130px; resize: vertical; }
   const local = {
     kind: "local",
     read(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
-    write(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+    write(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} syncSoon(); },
     subscribe() {
       recipes = this.read("rb-recipes", []).map(normRecipe);
-      list = normList(this.read("rb-list", { items: [], recipes: [] }));
+      const rawList = this.read("rb-list", { items: [], recipes: [] });
+      if ((rawList.items || []).some((i) => !i.id)) { rawList.items.forEach((i) => { if (!i.id) i.id = uid(); }); try { localStorage.setItem("rb-list", JSON.stringify(rawList)); } catch (e) {} }
+      list = normList(rawList);
       extras = this.read("rb-extra", []);
       extraAisles = this.read("rb-extra-aisles", {});
       aisleOrder = this.read("rb-order", null);
@@ -546,7 +553,7 @@ textarea.field { min-height: 130px; resize: vertical; }
         pendingImport = data;
         $("#panel").innerHTML = `
           <div class="panel-top"><h2 id="panel-title">Sicherung laden?</h2><button class="close" data-act="close" aria-label="Schliessen">×</button></div>
-          <p style="max-width:52ch">Die Sicherung vom ${esc(new Date(data.savedAt || Date.now()).toLocaleString("de-CH"))} enthält ${data.recipes.length} Rezepte. Sie ersetzt alles, was jetzt in der App gespeichert ist.</p>
+          <p style="max-width:52ch">Die Sicherung vom ${esc(new Date(data.savedAt || Date.now()).toLocaleString("de-CH"))} enthält ${data.recipes.length} Rezepte. Sie ersetzt alles, was jetzt in der App gespeichert ist${syncCfg ? ", auch beim Mitbewohner" : ""}.</p>
           <div class="panel-actions"><button class="btn ghost" data-act="close">Abbrechen</button><button class="btn primary" data-act="do-import">Ersetzen und laden</button></div>`;
         showSheet();
       } catch (e) { toast("Das ist keine gültige Rezeptbuch-Sicherung."); }
@@ -565,6 +572,233 @@ textarea.field { min-height: 130px; resize: vertical; }
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
     store = local;
     store.subscribe();
+    syncStart();
+  }
+
+  /* ---------- Synchronisierung zwischen den Handys (Cloudflare-Worker, siehe cloudflare/worker.js) ----------
+     Jedes Rezept, jeder Listeneintrag und jede eigene Zutat ist eine eigene Zeile. Geänderte Zeilen gehen an den
+     Worker, neue Zeilen vom anderen Handy kommen zurück. Gleiche Zeile auf beiden Handys geändert: neuere gewinnt.
+     rb-sync: { code, rev, last, shadow: { zeile: { h, u } }, pending: { zeile: { h, u } } } */
+  const SYNC_URL = "";
+  const SYNC_KEY = "rb-sync";
+  const SYNC_KINDS = ["r", "i", "x", "m"];
+  let syncCfg = null, syncRunning = false, syncAgain = false, syncTimer = 0, syncState = "idle";
+  try { syncCfg = JSON.parse(localStorage.getItem(SYNC_KEY) || "null"); } catch (e) { syncCfg = null; }
+  if (syncCfg && !syncCfg.code) syncCfg = null;
+  function syncSave() { try { if (syncCfg) localStorage.setItem(SYNC_KEY, JSON.stringify(syncCfg)); else localStorage.removeItem(SYNC_KEY); } catch (e) {} }
+  function hashStr(s) {
+    let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+    for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+  }
+  function rawRead(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
+  function localRows() {
+    const rows = new Map();
+    (rawRead("rb-recipes", []) || []).forEach((r) => { if (r && r.id) rows.set("r:" + r.id, JSON.stringify(r)); });
+    const l = rawRead("rb-list", null) || { items: [], recipes: [] };
+    (l.items || []).forEach((i) => { if (i && i.id) rows.set("i:" + i.id, JSON.stringify(i)); });
+    rows.set("m:listRecipes", JSON.stringify(l.recipes || []));
+    const ex = rawRead("rb-extra", []) || [], ea = rawRead("rb-extra-aisles", {}) || {};
+    const names = {};
+    ex.forEach((n) => { const k = String(n).trim().toLowerCase(); if (k && !(k in names)) names[k] = n; });
+    new Set(Object.keys(names).concat(Object.keys(ea))).forEach((k) => rows.set("x:" + k, JSON.stringify({ name: names[k] ?? null, aisle: ea[k] ?? null })));
+    rows.set("m:route", JSON.stringify(rawRead("rb-route", null) ?? null));
+    rows.set("m:order", JSON.stringify(rawRead("rb-order", null) ?? null));
+    return rows;
+  }
+  /* Lokale Änderungen seit dem letzten Abgleich vormerken. u ist immer neuer als die Version, die dieses Handy zuletzt gesehen hat. */
+  function noteChanges() {
+    if (!syncCfg) return;
+    const rows = localRows(), now = Date.now(), sh = syncCfg.shadow, pe = syncCfg.pending;
+    const mark = (k, h) => {
+      const s = sh[k], p = pe[k];
+      if (s && s.h === h) { delete pe[k]; return; }
+      if (!s && h === "-") { if (p && p.h !== "-") pe[k] = { h, u: Math.max(now, p.u + 1) }; return; }
+      if (p && p.h === h) return;
+      pe[k] = { h, u: Math.max(now, s ? s.u + 1 : 0, p ? p.u + 1 : 0) };
+    };
+    rows.forEach((d, k) => mark(k, hashStr(d)));
+    new Set(Object.keys(sh).concat(Object.keys(pe))).forEach((k) => { if (!rows.has(k) && SYNC_KINDS.includes(k.split(":")[0])) mark(k, "-"); });
+  }
+  function applyRemote(rows) {
+    if (!rows.length) return false;
+    noteChanges();
+    const sh = syncCfg.shadow, pe = syncCfg.pending;
+    const rec = rawRead("rb-recipes", []) || [];
+    const l = rawRead("rb-list", null) || { items: [], recipes: [] }; l.items = l.items || []; l.recipes = l.recipes || [];
+    let ex = rawRead("rb-extra", []) || []; const ea = rawRead("rb-extra-aisles", {}) || {};
+    let route = rawRead("rb-route", null), order = rawRead("rb-order", null);
+    let changed = false;
+    rows.forEach((r) => {
+      if (pe[r.k]) return;
+      const h = r.d == null ? "-" : hashStr(r.d), s = sh[r.k];
+      if (h === "-" ? !s : (s && s.h === h)) { if (s) s.u = Math.max(s.u, r.u); return; }
+      const i = r.k.indexOf(":"), t = r.k.slice(0, i), id = r.k.slice(i + 1);
+      let v = null;
+      try { v = r.d == null ? null : JSON.parse(r.d); } catch (e) { return; }
+      const put = (arr, keyOf) => { const at = arr.findIndex((x) => x && keyOf(x) === id); if (v == null) { if (at >= 0) arr.splice(at, 1); } else if (at >= 0) arr[at] = v; else arr.push(v); };
+      if (t === "r") put(rec, (x) => x.id);
+      else if (t === "i") put(l.items, (x) => x.id);
+      else if (t === "x") {
+        ex = ex.filter((n) => String(n).trim().toLowerCase() !== id); delete ea[id];
+        if (v && v.name) ex.push(v.name);
+        if (v && v.aisle) ea[id] = v.aisle;
+      }
+      else if (t === "m" && id === "listRecipes") l.recipes = Array.isArray(v) ? v : [];
+      else if (t === "m" && id === "route") route = v;
+      else if (t === "m" && id === "order") order = v;
+      else return;
+      if (h === "-") delete sh[r.k]; else sh[r.k] = { h, u: r.u };
+      changed = true;
+    });
+    if (!changed) return false;
+    writeAll({ recipes: rec, list: l, extras: ex, extraAisles: ea, route, order });
+    return true;
+  }
+  async function syncPost(body) {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 15000);
+    try {
+      const res = await fetch(SYNC_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctl.signal, cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw Object.assign(new Error(data.error || "http"), { status: res.status });
+      return data;
+    } finally { clearTimeout(t); }
+  }
+  async function syncNow() {
+    if (!SYNC_URL || !syncCfg) return;
+    if (syncRunning) { syncAgain = true; return; }
+    syncRunning = true;
+    let changed = false;
+    try {
+      do {
+        syncAgain = false;
+        noteChanges();
+        const rows = localRows(), keys = Object.keys(syncCfg.pending).slice(0, 400);
+        const sent = keys.map((k) => { const p = syncCfg.pending[k]; return { k, h: p.h, u: p.u, d: p.h === "-" ? null : (rows.get(k) ?? null) }; });
+        const code = syncCfg.code;
+        const res = await syncPost({ code, since: syncCfg.rev || 0, rows: sent.map(({ k, d, u }) => ({ k, d, u })) });
+        if (!syncCfg || syncCfg.code !== code) return;
+        sent.forEach((s) => {
+          const p = syncCfg.pending[s.k];
+          if (!p || p.h !== s.h) return;
+          delete syncCfg.pending[s.k];
+          if (s.h === "-") delete syncCfg.shadow[s.k]; else syncCfg.shadow[s.k] = { h: s.h, u: s.u };
+        });
+        if (applyRemote(res.rows || [])) changed = true;
+        syncCfg.rev = res.rev || syncCfg.rev || 0;
+        syncCfg.last = Date.now();
+        syncSave();
+        if (res.more || keys.length === 400) syncAgain = true;
+      } while (syncAgain);
+      syncState = "ok";
+    } catch (e) {
+      syncState = "offline";
+    } finally {
+      syncRunning = false;
+      if (changed) syncRefresh();
+      syncStatus();
+    }
+  }
+  function syncSoon() { if (!syncCfg || !SYNC_URL) return; clearTimeout(syncTimer); syncTimer = setTimeout(syncNow, 300); }
+  function syncRefresh() {
+    local.subscribe();
+    if (detail) {
+      const r = recipes.find((x) => x.id === detail.r.id);
+      if (r) { if ((r.ingredients || []).length !== (detail.r.ingredients || []).length) detail.need = (r.ingredients || []).map(() => true); detail.r = r; drawDetail(); }
+    }
+    if (routeOpen && !drag) drawRoute();
+    if (syncOpen) drawSync();
+  }
+  function syncStatus() {
+    const m = $("#mode"); if (!m) return;
+    $("#sync-open").hidden = !SYNC_URL;
+    if (!syncCfg) { m.textContent = "Deine Daten sind auf diesem Handy gespeichert und funktionieren auch offline."; $("#sync-open").textContent = "Mit Mitbewohner synchronisieren"; return; }
+    $("#sync-open").textContent = "Synchronisierung";
+    const t = syncCfg.last ? new Date(syncCfg.last).toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" }) : "";
+    if (syncState === "offline") m.textContent = "Gerade keine Verbindung. Deine Änderungen sind gespeichert und werden übertragen, sobald du wieder Internet hast.";
+    else m.textContent = "Synchronisiert mit eurem gemeinsamen Rezeptbuch" + (t ? " · zuletzt " + t : "") + ".";
+  }
+  const CODE_ABC = "abcdefghjkmnpqrstuvwxyz23456789";
+  function newCode() { const a = new Uint32Array(16); crypto.getRandomValues(a); return [...a].map((n) => CODE_ABC[n % CODE_ABC.length]).join(""); }
+  function cleanCode(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]/g, ""); }
+  function prettyCode(c) { return c.toUpperCase().match(/.{1,4}/g).join("-"); }
+  function shareLink() { return location.origin + location.pathname + "#haushalt=" + prettyCode(syncCfg.code); }
+  let syncOpen = false, joinPrefill = "";
+  function drawSync(err) {
+    if (!syncCfg) {
+      $("#panel").innerHTML = `
+        <div class="panel-top"><div><h2 id="panel-title">Mit Mitbewohner synchronisieren</h2>
+          <p class="meta" style="max-width:56ch;margin:0">Ihr habt dann dieselben Rezepte, dieselbe Einkaufsliste und denselben Laufweg. Was einer ändert, erscheint nach ein paar Sekunden auch beim anderen. Offline geht weiterhin alles, abgeglichen wird, sobald wieder Internet da ist.</p></div>
+          <button class="close" data-act="close" aria-label="Schliessen">×</button></div>
+        <div class="section-label"><span>Zum ersten Mal</span></div>
+        <p class="hint" style="margin:0 0 10px">Einer von euch legt das gemeinsame Rezeptbuch an. Die Rezepte von diesem Handy kommen mit hinein.</p>
+        <button class="btn primary" data-act="sync-create">Gemeinsames Rezeptbuch anlegen</button>
+        <div class="section-label"><span>Code bekommen?</span></div>
+        <form id="join-form" class="form" style="margin-top:0">
+          <input class="field code-in" id="join-code" value="${esc(joinPrefill)}" placeholder="z. B. ABCD-EFGH-JKMN-PQRS" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Code">
+          <label class="switch"><input type="checkbox" id="join-keep" checked> Rezepte und Liste von diesem Handy dazunehmen</label>
+          <p class="hint" style="margin:0">Ohne Häkchen wird dieses Handy durch das gemeinsame Rezeptbuch ersetzt.</p>
+          ${err ? `<p class="err" style="margin:0">${esc(err)}</p>` : ""}
+          <div><button class="btn" type="submit">Beitreten</button></div>
+        </form>`;
+      return;
+    }
+    $("#panel").innerHTML = `
+      <div class="panel-top"><div><h2 id="panel-title">Synchronisierung</h2>
+        <p class="meta" style="max-width:56ch;margin:0" id="sync-line"></p></div>
+        <button class="close" data-act="close" aria-label="Schliessen">×</button></div>
+      <div class="section-label"><span>Euer Code</span></div>
+      <div class="code-box">${esc(prettyCode(syncCfg.code))}</div>
+      <p class="hint">Schick deinem Mitbewohner den Link. Er öffnet ihn im Chrome, in dem das Rezeptbuch installiert ist, und tippt auf «Beitreten». Wer den Code hat, kann eure Rezepte sehen und ändern, gib ihn also nicht weiter.</p>
+      <div class="actions" style="margin-top:12px"><button class="btn primary" data-act="sync-share">Link teilen</button><button class="btn" data-act="sync-now">Jetzt abgleichen</button></div>
+      <div class="panel-actions"><button class="btn danger" data-act="sync-leave">Synchronisierung beenden</button><button class="btn ghost" data-act="close">Fertig</button></div>`;
+    $("#sync-line").textContent = $("#mode").textContent;
+  }
+  function openSync() { routeOpen = false; syncOpen = true; drawSync(); showSheet(); }
+  async function syncCreate() {
+    syncCfg = { code: newCode(), rev: 0, last: 0, shadow: {}, pending: {} };
+    syncSave(); drawSync(); syncStatus();
+    await syncNow();
+    toast(syncState === "ok" ? "Gemeinsames Rezeptbuch angelegt" : "Angelegt. Abgleich folgt, sobald Internet da ist.");
+    if (syncOpen) drawSync();
+  }
+  async function syncJoin() {
+    const code = cleanCode($("#join-code").value), keep = $("#join-keep").checked;
+    joinPrefill = $("#join-code").value;
+    if (code.length !== 16) { drawSync("Der Code hat 16 Zeichen. Prüf ihn nochmal."); return; }
+    const btn = document.querySelector("#join-form button[type=submit]"); if (btn) { btn.disabled = true; btn.textContent = "Prüfe …"; }
+    let res;
+    try { res = await syncPost({ code, since: 0, rows: [] }); }
+    catch (e) { drawSync("Keine Verbindung. Versuch es mit Internet nochmal."); return; }
+    if (!res.known) { drawSync("Diesen Code gibt es nicht. Prüf ihn nochmal."); return; }
+    if (!keep) { writeAll(SEED); local.subscribe(); }
+    syncCfg = { code, rev: 0, last: 0, shadow: {}, pending: {} };
+    joinPrefill = "";
+    syncSave(); drawSync(); syncStatus();
+    await syncNow();
+    toast(syncState === "ok" ? "Verbunden. Ihr habt jetzt dasselbe Rezeptbuch." : "Verbunden. Abgleich folgt, sobald Internet da ist.");
+    if (syncOpen) drawSync();
+  }
+  function syncLink() {
+    const m = /[#&]haushalt=([A-Za-z0-9-]+)/.exec(location.hash);
+    if (!m) return;
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+    if (!SYNC_URL) return;
+    if (!syncCfg) { joinPrefill = m[1].toUpperCase(); openSync(); }
+    else if (cleanCode(m[1]) !== syncCfg.code) toast("Du bist schon mit einem anderen Rezeptbuch verbunden.");
+    else toast("Du bist schon verbunden.");
+  }
+  function syncStart() {
+    syncLink();
+    window.addEventListener("hashchange", syncLink);
+    syncStatus();
+    if (!SYNC_URL) return;
+    syncNow();
+    setInterval(() => { if (syncCfg && document.visibilityState === "visible") syncNow(); }, 5000);
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") syncNow(); });
+    window.addEventListener("online", syncNow);
   }
 
   /* ---------- Einkaufsliste ---------- */
@@ -586,7 +820,7 @@ textarea.field { min-height: 130px; resize: vertical; }
         else if (base != null) hit.qty = base;
         if (recipeName && !hit.sources.includes(recipeName)) hit.sources.push(recipeName);
       } else {
-        l.items.push({ key, name: ing.name.trim(), qty: base, unit: fam, aisle: ing.aisle || "Sonstiges", done: false, sources: recipeName ? [recipeName] : [] });
+        l.items.push({ id: uid(), key, name: ing.name.trim(), qty: base, unit: fam, aisle: ing.aisle || "Sonstiges", done: false, sources: recipeName ? [recipeName] : [] });
       }
       added++;
     });
@@ -903,7 +1137,7 @@ textarea.field { min-height: 130px; resize: vertical; }
   /* ---------- Sheet, Toast, Ansicht ---------- */
   let lastFocus = null;
   function showSheet() { if ($("#sheet").hidden) lastFocus = document.activeElement; $("#sheet").hidden = false; document.body.style.overflow = "hidden"; $("#panel").scrollTop = 0; }
-  function hideSheet() { routeOpen = false; $("#sheet").hidden = true; document.body.style.overflow = ""; detail = null; editing = null; if (lastFocus && lastFocus.focus) lastFocus.focus(); }
+  function hideSheet() { routeOpen = false; syncOpen = false; $("#sheet").hidden = true; document.body.style.overflow = ""; detail = null; editing = null; if (lastFocus && lastFocus.focus) lastFocus.focus(); }
   let tt;
   function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => (t.hidden = true), 2600); }
   function setView(v) {
@@ -932,7 +1166,20 @@ textarea.field { min-height: 130px; resize: vertical; }
     if (!t) { if (e.target === $("#sheet")) hideSheet(); return; }
     if (t.dataset.cat !== undefined) { filter.cat = t.dataset.cat; renderChips(); renderGrid(); return; }
     if (t.dataset.mv !== undefined) { if (!guard()) return; moveItem(+t.dataset.mv, +t.dataset.dir); return; }
-    if (t.id === "route") { routeOpen = true; drawRoute(); showSheet(); return; }
+    if (t.id === "route") { syncOpen = false; routeOpen = true; drawRoute(); showSheet(); return; }
+    if (t.id === "sync-open") { openSync(); return; }
+    if (t.dataset.act === "sync-create") { t.disabled = true; syncCreate(); return; }
+    if (t.dataset.act === "sync-now") { t.disabled = true; t.textContent = "Gleiche ab …"; syncNow().then(() => { toast(syncState === "ok" ? "Abgeglichen" : "Keine Verbindung"); if (syncOpen) drawSync(); }); return; }
+    if (t.dataset.act === "sync-share") {
+      const url = shareLink(), text = "Tritt unserem gemeinsamen Rezeptbuch bei: " + url;
+      if (navigator.share) navigator.share({ title: "Mein Rezeptbuch", text }).catch(() => {});
+      else navigator.clipboard.writeText(url).then(() => toast("Link kopiert"), () => fallbackCopy(url));
+      return;
+    }
+    if (t.dataset.act === "sync-leave") {
+      arm(t, "Wirklich beenden?", () => { syncCfg = null; syncSave(); syncState = "idle"; syncStatus(); drawSync(); toast("Synchronisierung beendet. Deine Daten bleiben auf diesem Handy."); });
+      return;
+    }
     if (t.dataset.act === "route-reset") {
       if (!guard()) return;
       arm(t, "Wirklich zurücksetzen?", () => { routeItems = null; drawRoute(); renderList(); store.saveRoute(null).catch(fail); });
@@ -1125,6 +1372,7 @@ textarea.field { min-height: 130px; resize: vertical; }
 
   document.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (e.target.id === "join-form") { syncJoin(); return; }
     if (e.target.id === "ing-form") {
       if (!guard()) return;
       const nm = capFirst($("#ing-new").value), lk = nm.toLowerCase();

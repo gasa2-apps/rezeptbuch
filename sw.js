@@ -1,5 +1,5 @@
 /* Mein Rezeptbuch: Offline-Cache */
-const VERSION = "rezeptbuch-v5";
+const VERSION = "rezeptbuch-v6";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./rochen-192.png", "./rochen-512.png", "./rochen-maskable-512.png"];
 
 self.addEventListener("install", (e) => {
