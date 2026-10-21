@@ -579,7 +579,7 @@ textarea.field { min-height: 130px; resize: vertical; }
      Jedes Rezept, jeder Listeneintrag und jede eigene Zutat ist eine eigene Zeile. Geänderte Zeilen gehen an den
      Worker, neue Zeilen vom anderen Handy kommen zurück. Gleiche Zeile auf beiden Handys geändert: neuere gewinnt.
      rb-sync: { code, rev, last, shadow: { zeile: { h, u } }, pending: { zeile: { h, u } } } */
-  const SYNC_URL = "";
+  const SYNC_URL = "https://rezeptbuch-sync.sandro-gartmann.workers.dev";
   const SYNC_KEY = "rb-sync";
   const SYNC_KINDS = ["r", "i", "x", "m"];
   let syncCfg = null, syncRunning = false, syncAgain = false, syncTimer = 0, syncState = "idle";
