@@ -76,6 +76,12 @@ button { cursor: pointer; }
 .tabs { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px; }
 .tab { border: 0; background: transparent; padding: 7px 14px; border-radius: 999px; font-weight: 600; font-size: 14px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
 .tab[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); }
+.t-short { display: none; }
+@media (max-width: 560px) {
+  .tabs { width: 100%; }
+  .tab { flex: 1 1 auto; justify-content: center; padding: 7px 6px; font-size: 13.5px; gap: 4px; }
+}
+@media (max-width: 420px) { .t-long { display: none; } .t-short { display: inline; } }
 .count { font-family: var(--mono); font-size: 12px; min-width: 20px; padding: 0 5px; border-radius: 999px; background: var(--mark); color: #1b1404; text-align: center; }
 
 main .wrap { padding-block: 20px 60px; }
@@ -195,6 +201,8 @@ textarea.field { min-height: 130px; resize: vertical; }
 .ing-row2:first-child { border-top: 0; }
 .ing-row2 .use { font-size: 12.5px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .ing-row2.hit { background: var(--accent-soft); }
+.hh-put { font-size: 13px; padding: 5px 10px; white-space: nowrap; }
+.hh-put:disabled { opacity: 1; color: var(--accent); border-color: transparent; background: transparent; }
 #ing-hint b { color: var(--ink); }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 30; background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 999px; font-size: 14px; font-weight: 500; max-width: calc(100% - 32px); }
 .mode { font-size: 12px; color: var(--muted); text-align: center; margin-top: 30px; }
@@ -212,8 +220,9 @@ textarea.field { min-height: 130px; resize: vertical; }
     <h1 class="brand">Mein Rezeptbuch<small>Die Gerichte, die ich immer wieder koche</small></h1>
     <nav class="tabs" role="tablist" aria-label="Ansicht">
       <button class="tab" role="tab" id="tab-recipes" aria-selected="true" data-view="recipes">Rezepte</button>
-      <button class="tab" role="tab" id="tab-list" aria-selected="false" data-view="list">Einkaufsliste <span class="count" id="list-count" hidden>0</span></button>
+      <button class="tab" role="tab" id="tab-list" aria-selected="false" data-view="list"><span class="t-long">Einkaufsliste</span><span class="t-short">Liste</span> <span class="count" id="list-count" hidden>0</span></button>
       <button class="tab" role="tab" id="tab-ing" aria-selected="false" data-view="ingredients">Zutaten</button>
+      <button class="tab" role="tab" id="tab-hh" aria-selected="false" data-view="household">Haushalt</button>
     </nav>
   </div>
 </header>
@@ -243,6 +252,22 @@ textarea.field { min-height: 130px; resize: vertical; }
       </form>
       <p class="hint" id="ing-hint" style="margin:0 0 18px;min-height:1.5em"></p>
       <div id="ing-list"></div>
+    </section>
+
+    <section id="view-household" hidden>
+      <div class="list-head">
+        <div>
+          <h2>Haushalt</h2>
+          <div class="for" id="hh-count"></div>
+        </div>
+      </div>
+      <form class="adder" id="hh-form" style="margin-bottom:6px">
+        <input id="hh-new" autocomplete="off" aria-autocomplete="list" placeholder="z. B. WC-Papier, Abwaschmittel …" aria-label="Haushaltssache suchen oder neu eintragen">
+        <select id="hh-aisle" aria-label="Abteilung"></select>
+        <button class="btn primary" type="submit" id="hh-add">Hinzufügen</button>
+      </form>
+      <p class="hint" id="hh-hint" style="margin:0 0 18px;min-height:1.5em"></p>
+      <div id="hh-list"></div>
     </section>
 
     <section id="view-list" hidden>
@@ -284,13 +309,17 @@ textarea.field { min-height: 130px; resize: vertical; }
 
 <script>
 (function () {
-  const AISLES = ["Bäckerei", "Früchte & Gemüse", "Milch, Käse & Eier", "Fleisch & Fisch", "Beilagen & Saisonales", "Öl, Saucen & Eingemachtes", "Teigwaren, Reis & Backzutaten", "Konserven & International", "Gewürze", "Tiefkühl", "Frühstück & Snacks", "Getränke", "Sonstiges"];
+  const AISLES = ["Bäckerei", "Früchte & Gemüse", "Milch, Käse & Eier", "Fleisch & Fisch", "Beilagen & Saisonales", "Öl, Saucen & Eingemachtes", "Teigwaren, Reis & Backzutaten", "Konserven & International", "Gewürze", "Tiefkühl", "Frühstück & Snacks", "Getränke", "Drogerie & Körperpflege", "Haushalt & Putzmittel", "Sonstiges"];
+  const HH_AISLES = ["Drogerie & Körperpflege", "Haushalt & Putzmittel"];
+  const isHH = (a) => HH_AISLES.includes(a);
   const UNITS = ["", "g", "kg", "ml", "dl", "l", "EL", "TL", "Stk", "Zehe", "Bund", "Dose", "Pck", "Prise", "Becher"];
   const CATS = ["Pasta", "Fleisch", "Vegetarisch", "Fisch", "Suppe", "Salat", "Backen", "Dessert", "Frühstück", "Anderes"];
 
   /* Abteilung automatisch erkennen. Reihenfolge zählt: der erste Treffer gewinnt.
      "-wort" = Wortende (z. B. -öl trifft Olivenöl, nicht Oliven). Wörter bis 3 Buchstaben nur als ganzes Wort. */
   const AUTO = [
+    ["Haushalt & Putzmittel", ["spülmaschinensalz", "regeneriersalz", "geschirrspül", "abwasch", "spülmittel", "waschmittel", "weichspüler", "fleckentferner", "putzmittel", "reiniger", "entkalker", "javel", "wc-ente", "schwamm", "putzlappen", "abfallsack", "abfallsäcke", "kehrichtsack", "kehrichtsäcke", "gebührensack", "müllsack", "wc-papier", "toilettenpapier", "klopapier", "haushaltpapier", "küchenpapier", "küchenrolle", "alufolie", "frischhaltefolie", "gefrierbeutel", "backpapier", "servietten", "batterien", "kerzen", "glühbirne", "zündhölzer", "feuerzeug", "tabs"]],
+    ["Drogerie & Körperpflege", ["zahnpasta", "zahnbürste", "zahnseide", "mundspülung", "shampoo", "spülung", "duschgel", "duschmittel", "seife", "deo", "deodorant", "rasier", "bodylotion", "handcreme", "sonnencreme", "gesichtscreme", "taschentücher", "tempo", "wattestäbchen", "wattepads", "pflaster", "tampons", "slipeinlagen", "haargel", "haarspray", "lippenpflege", "nagellack", "kontaktlinsen"]],
     ["Beilagen & Saisonales", ["rotkraut", "rotkohl", "blaukraut", "rehpfeffer", "wildpfeffer", "spätzli", "knöpfli", "marroni", "rosenkohl gekocht"]],
     ["Bäckerei", ["hefe", "bagel"]],
     ["Teigwaren, Reis & Backzutaten", ["tomatensauce", "pastasauce", "sugo"]],
@@ -830,7 +859,45 @@ textarea.field { min-height: 130px; resize: vertical; }
   }
 
   /* ---------- Rendern ---------- */
-  function renderAll() { renderChips(); renderGrid(); renderList(); renderIngredients(); }
+  function renderAll() { renderChips(); renderGrid(); renderList(); renderIngredients(); renderHousehold(); }
+
+  /* ---------- Haushalt: eigene Sachen wie WC-Papier, gespeichert wie eigene Zutaten (rb-extra), erkannt an der Abteilung ---------- */
+  const HH_VOCAB = ["Abfallsäcke", "Abwaschmittel", "Alufolie", "Backpapier", "Batterien", "Deo", "Duschgel", "Entkalker", "Frischhaltefolie", "Gefrierbeutel", "Geschirrspültabs", "Haushaltpapier", "Kerzen", "Pflaster", "Rasierklingen", "Schwämme", "Seife", "Servietten", "Shampoo", "Spülmaschinensalz", "Taschentücher", "Waschmittel", "Wattestäbchen", "WC-Papier", "WC-Reiniger", "Weichspüler", "Zahnbürste", "Zahnpasta"];
+  function hhGuess(name) { const g = guessAisle(name); return isHH(g) ? g : "Haushalt & Putzmittel"; }
+  function renderHousehold() {
+    const box = $("#hh-list"); if (!box) return;
+    const q = ($("#hh-new").value || "").trim().toLowerCase();
+    const every = allIngredientNames();
+    const all = every.filter((e) => isHH(e.aisle));
+    $("#hh-count").textContent = all.length === 1 ? "1 Sache gespeichert" : all.length + " Sachen gespeichert";
+    const exact = q && every.find((e) => e.key === q);
+    let sim = null;
+    if (!exact && q.length >= 4) all.forEach((e) => { const d = lev(q, e.key); if (d > 0 && d <= (q.length >= 7 ? 2 : 1) && (!sim || d < sim.d)) sim = { e, d }; });
+    sim = sim && sim.e;
+    const hint = $("#hh-hint");
+    if (exact) hint.innerHTML = `<b>${esc(exact.name)}</b> ist schon gespeichert (${esc(exact.aisle)}).`;
+    else if (sim) hint.innerHTML = `Ähnlich: <b>${esc(sim.name)}</b>. Meinst du das? Sonst einfach hinzufügen.`;
+    else if (q) hint.textContent = "Neu. Mit «Hinzufügen» speichern.";
+    else hint.textContent = "Mit «+ Liste» kommt eine Sache direkt auf die Einkaufsliste.";
+    $("#hh-add").disabled = !q || !!exact;
+    if (!all.length) { box.innerHTML = `<div class="empty"><p>Noch nichts gespeichert. Trag oben ein, was ihr im Haushalt immer wieder braucht, z. B. WC-Papier oder Abwaschmittel.</p></div>`; return; }
+    const shown = q ? all.filter((e) => e.key.includes(q) || (sim && e.key === sim.key)) : all;
+    if (!shown.length) { box.innerHTML = ""; return; }
+    const onList = new Set((list.items || []).filter((i) => !i.done).map((i) => i.name.trim().toLowerCase()));
+    const r = rankFn();
+    box.innerHTML = orderedAisles().filter(isHH).map((a) => {
+      const rows = shown.filter((e) => e.aisle === a).sort((x, y) => r(x.name, x.aisle) - r(y.name, y.aisle) || x.name.localeCompare(y.name, "de"));
+      if (!rows.length) return "";
+      return `<div class="aisle"><h4>${esc(a)} · ${rows.length}</h4><ul class="items">${rows.map((e) => {
+        const isExtra = extras.some((x) => x.trim().toLowerCase() === e.key);
+        const has = onList.has(e.key);
+        return `<li class="ing-row2 hh-row${q && (e.key === q || (sim && e.key === sim.key)) ? " hit" : ""}">
+          <span class="iname">${esc(e.name)}</span>
+          <button class="btn hh-put" data-hhput="${esc(e.key)}" ${has ? "disabled" : ""}>${has ? "✓ Auf der Liste" : "+ Liste"}</button>
+          ${isExtra ? `<button class="x" data-unextra="${esc(e.key)}" aria-label="${esc(e.name)} löschen">×</button>` : "<span></span>"}
+        </li>`; }).join("")}</ul></div>`;
+    }).join("");
+  }
 
   /* ---------- Zutaten-Übersicht ---------- */
   function capFirst(t) { t = t.trim().replace(/\s+/g, " "); return t ? t[0].toUpperCase() + t.slice(1) : t; }
@@ -843,7 +910,7 @@ textarea.field { min-height: 130px; resize: vertical; }
   function renderIngredients() {
     const box = $("#ing-list"); if (!box) return;
     const q = ($("#ing-new").value || "").trim().toLowerCase();
-    const all = allIngredientNames();
+    const all = allIngredientNames().filter((e) => !isHH(e.aisle));
     const uses = {};
     recipes.forEach((r) => { const seen = new Set(); (r.ingredients || []).forEach((i) => { const k = (i.name || "").trim().toLowerCase(); if (k && !seen.has(k)) { seen.add(k); uses[k] = (uses[k] || 0) + 1; } }); });
     $("#ing-count").textContent = all.length + " Zutaten gespeichert";
@@ -1144,6 +1211,7 @@ textarea.field { min-height: 130px; resize: vertical; }
     $("#view-recipes").hidden = v !== "recipes";
     $("#view-list").hidden = v !== "list";
     $("#view-ingredients").hidden = v !== "ingredients";
+    $("#view-household").hidden = v !== "household";
     hideSugg();
     document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", t.dataset.view === v));
     try { localStorage.setItem("rb-view", v); } catch (e) {}
@@ -1185,14 +1253,20 @@ textarea.field { min-height: 130px; resize: vertical; }
       arm(t, "Wirklich zurücksetzen?", () => { routeItems = null; drawRoute(); renderList(); store.saveRoute(null).catch(fail); });
       return;
     }
+    if (t.dataset.hhput) {
+      if (!guard()) return;
+      const e = allIngredientNames().find((x) => x.key === t.dataset.hhput); if (!e) return;
+      addToList([{ name: e.name, qty: null, unit: "", aisle: e.aisle }], null);
+      toast(e.name + " auf der Einkaufsliste"); return;
+    }
     if (t.dataset.unextra) {
       if (!guard()) return;
       const k = t.dataset.unextra;
       extras = extras.filter((x) => x.trim().toLowerCase() !== k);
       const m = Object.assign({}, extraAisles); delete m[k]; extraAisles = m;
       routeItems = routeItems ? routeItems.filter((x) => x !== k) : routeItems;
-      renderIngredients();
-      store.saveExtras(extras, extraAisles).then(() => toast("Zutat gelöscht"), fail);
+      renderIngredients(); renderHousehold();
+      store.saveExtras(extras, extraAisles).then(() => toast("Gelöscht"), fail);
       return;
     }
     if (t.id === "exp") { exportBackup(); return; }
@@ -1255,21 +1329,21 @@ textarea.field { min-height: 130px; resize: vertical; }
     }
     return prev[n];
   }
-  function knownNames() {
+  function knownNames(more) {
     const map = new Map();
     recipes.forEach((r) => (r.ingredients || []).forEach((i) => {
       const k = (i.name || "").trim().toLowerCase(); if (!k) return;
       const e = map.get(k); if (e) e.n++; else map.set(k, { name: i.name.trim(), n: 1 });
     }));
     extras.forEach((v) => { const k = v.toLowerCase(); if (!map.has(k)) map.set(k, { name: v, n: 1 }); });
-    VOCAB.forEach((v) => { const k = v.toLowerCase(); if (!map.has(k)) map.set(k, { name: v, n: 0 }); });
+    (more || VOCAB).forEach((v) => { const k = v.toLowerCase(); if (!map.has(k)) map.set(k, { name: v, n: 0 }); });
     return [...map.values()];
   }
-  function suggestions(q) {
+  function suggestions(q, pool) {
     q = q.trim().toLowerCase();
     if (!q) return [];
     const out = [];
-    knownNames().forEach((e) => {
+    (pool || knownNames()).forEach((e) => {
       const n = e.name.toLowerCase();
       if (n === q) return;
       let s = -1;
@@ -1302,7 +1376,7 @@ textarea.field { min-height: 130px; resize: vertical; }
   }
   function showSugg(input) {
     const q = input.id === "adder-name" ? splitAdder(input.value).q : input.value;
-    sugItems = suggestions(q); sugIdx = -1; sugInput = input;
+    sugItems = suggestions(q, input.id === "hh-new" ? knownNames(HH_VOCAB).filter((e) => e.n === 0 || isHH(normAisle(e.name, extraAisles[e.name.toLowerCase()]))) : input.id === "adder-name" ? knownNames(VOCAB.concat(HH_VOCAB)) : null); sugIdx = -1; sugInput = input;
     if (!sugItems.length) { hideSugg(); return; }
     sug.innerHTML = sugItems.map((s, i) => `<div class="sugg-row" role="option" id="sg-${i}" data-sg="${i}"><span>${hl(s.name, q)}</span>${s.fuzzy ? '<span class="sugg-tag">Meintest du das?</span>' : s.mine ? '<span class="sugg-tag">schon verwendet</span>' : ""}</div>`).join("");
     const r = input.getBoundingClientRect();
@@ -1344,8 +1418,9 @@ textarea.field { min-height: 130px; resize: vertical; }
   document.addEventListener("input", (e) => {
     const t = e.target;
     let sel = null;
-    if (/^n-\d+$/.test(t.id) || t.id === "adder-name" || t.id === "ing-new") showSugg(t);
+    if (/^n-\d+$/.test(t.id) || t.id === "adder-name" || t.id === "ing-new" || t.id === "hh-new") showSugg(t);
     if (t.id === "ing-new") renderIngredients();
+    if (t.id === "hh-new") { renderHousehold(); const hs = $("#hh-aisle"); if (!hs.dataset.manual) hs.value = hhGuess(t.value); return; }
     if (/^n-\d+$/.test(t.id)) sel = $("#a-" + t.id.slice(2));
     else if (t.id === "adder-name") sel = $("#adder-aisle");
     else if (t.id === "ing-new") sel = $("#ing-aisle");
@@ -1362,7 +1437,7 @@ textarea.field { min-height: 130px; resize: vertical; }
       if (!wasOn && t.checked) editing.ingredients.forEach((i, k) => { if (keep[k]) { i.qty = keep[k].qty; i.unit = keep[k].unit; } });
       editing.withQty = t.checked; drawEditor(); return;
     }
-    if (/^a-\d+$/.test(t.id) || t.id === "adder-aisle" || t.id === "ing-aisle") t.dataset.manual = "1";
+    if (/^a-\d+$/.test(t.id) || t.id === "adder-aisle" || t.id === "ing-aisle" || t.id === "hh-aisle") t.dataset.manual = "1";
     if (t.dataset.need !== undefined) { detail.need[+t.dataset.need] = t.checked; drawDetail(); const f = $("#need-" + t.dataset.need); if (f) f.focus(); }
     if (t.dataset.tick !== undefined) {
       if (!guard()) { t.checked = !t.checked; return; }
@@ -1373,6 +1448,19 @@ textarea.field { min-height: 130px; resize: vertical; }
   document.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (e.target.id === "join-form") { syncJoin(); return; }
+    if (e.target.id === "hh-form") {
+      if (!guard()) return;
+      const nm = capFirst($("#hh-new").value), lk = nm.toLowerCase();
+      if (!nm) return;
+      const ex = allIngredientNames().find((x) => x.key === lk);
+      if (ex) { toast(ex.name + " ist schon gespeichert"); return; }
+      extras = extras.concat(nm).slice(-300);
+      extraAisles = Object.assign({}, extraAisles, { [lk]: $("#hh-aisle").value });
+      try { await store.saveExtras(extras, extraAisles); toast(nm + " gespeichert"); } catch (err) { fail(err); }
+      $("#hh-new").value = ""; delete $("#hh-aisle").dataset.manual; $("#hh-aisle").value = "Haushalt & Putzmittel";
+      renderHousehold(); $("#hh-new").focus();
+      return;
+    }
     if (e.target.id === "ing-form") {
       if (!guard()) return;
       const nm = capFirst($("#ing-new").value), lk = nm.toLowerCase();
@@ -1443,7 +1531,8 @@ textarea.field { min-height: 130px; resize: vertical; }
 
   $("#adder-aisle").innerHTML = opt(AISLES, "Sonstiges");
   $("#ing-aisle").innerHTML = opt(AISLES, "Sonstiges");
-  try { const v = localStorage.getItem("rb-view"); if (v === "list" || v === "ingredients") setView(v); } catch (e) {}
+  $("#hh-aisle").innerHTML = opt(HH_AISLES, "Haushalt & Putzmittel");
+  try { const v = localStorage.getItem("rb-view"); if (v === "list" || v === "ingredients" || v === "household") setView(v); } catch (e) {}
   $("#imp-file").addEventListener("change", (e) => { const f = e.target.files && e.target.files[0]; if (f) importBackup(f); e.target.value = ""; });
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
     window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));

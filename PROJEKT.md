@@ -44,10 +44,12 @@ Persönliches Rezeptbuch mit Einkaufsliste nach Laufweg in der Migros. Installie
 - Ein Klick setzt Zutaten auf die Einkaufsliste; gleiche Zutaten werden zusammengefasst, Einheiten umgerechnet
 - Einkaufsliste nach Laufweg sortiert, mit Abteilungs-Überschriften; abhaken, kopieren, eigene Artikel hinzufügen
 - «Laufweg anpassen»: alle Zutaten per Ziehen oder Pfeilen ordnen; neue Zutaten reihen sich hinter der letzten Zutat derselben Abteilung ein
-- Reiter «Zutaten»: alle gespeicherten Zutaten, Suche, neue hinzufügen mit Duplikat- und Tippfehler-Warnung
+- Reiter «Zutaten»: alle gespeicherten Zutaten (ohne Haushaltssachen), Suche, neue hinzufügen mit Duplikat- und Tippfehler-Warnung
+- Reiter «Haushalt»: Sachen wie WC-Papier, Abwaschmittel, Zahnpasta. Gespeichert wie eigene Zutaten (`rb-extra`), erkannt an den Abteilungen `HH_AISLES`. Mit «+ Liste» direkt auf die Einkaufsliste. Erscheinen auch im Laufweg.
 - Vorschläge beim Tippen (eigene Zutaten zuerst, Tippfehler-Erkennung per Levenshtein)
 - Abteilung wird automatisch erkannt: zuerst aus eigenen Rezepten gelernt, dann per Stichwortliste (`AUTO` in `index.html`)
-- Abteilungen in Laufweg-Reihenfolge: Bäckerei, Früchte & Gemüse, Milch, Käse & Eier, Fleisch & Fisch, Beilagen & Saisonales, Öl, Saucen & Eingemachtes, Teigwaren, Reis & Backzutaten, Konserven & International, Gewürze, Tiefkühl, Frühstück & Snacks, Getränke, Sonstiges
+- Abteilungen in Laufweg-Reihenfolge: Bäckerei, Früchte & Gemüse, Milch, Käse & Eier, Fleisch & Fisch, Beilagen & Saisonales, Öl, Saucen & Eingemachtes, Teigwaren, Reis & Backzutaten, Konserven & International, Gewürze, Tiefkühl, Frühstück & Snacks, Getränke, Drogerie & Körperpflege, Haushalt & Putzmittel, Sonstiges
+- Auf schmalen Handys heisst der Reiter «Einkaufsliste» nur «Liste» (Platz für vier Reiter)
 - Hell- und Dunkelmodus, Android-Zurück-Taste, «Sicherung speichern / laden»
 
 ## Synchronisierung
