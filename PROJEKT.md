@@ -17,6 +17,7 @@ Persönliches Rezeptbuch mit Einkaufsliste nach Laufweg in der Migros. Installie
 - `cloudflare/worker.js`: Sync-Server (Cloudflare Worker mit D1-Datenbank). Läuft nicht auf GitHub, sondern wird im Cloudflare-Dashboard eingefügt.
 
 ## Regeln bei jeder Änderung
+0. **App-Version** steht unten in `index.html` (`Version 1.3`). Bei jedem Update hochzählen (z. B. 1.3 auf 1.4).
 1. **In `sw.js` die `VERSION` hochzählen** (z. B. `rezeptbuch-v5` auf `rezeptbuch-v6`). Sonst bleiben Dateien im Cache der Handys alt.
 2. Die Seite selbst lädt beim Öffnen mit Internet zuerst frisch aus dem Netz. Updates kommen so automatisch, ohne Neuinstallation.
 3. **Symbol ändern:** Bilddateien unter neuem Namen ablegen und in `manifest.webmanifest`, `index.html` und `sw.js` (SHELL) anpassen. Auf dem Handy muss das Symbol danach einmal entfernt und neu hinzugefügt werden.
